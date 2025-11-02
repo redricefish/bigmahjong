@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -129,7 +128,7 @@ namespace MahjongLogic
         private int agr_flg;
         private int tmp_ply_flg;
         private int tmp_ronh;
-        private const int mfd_end = 15; // Placeholder, adjust based on actual definition
+        private const int mfd_end = 15; // 0+1+1+1+4+4+4 = 15
 
 
         public bool YakuCheck()
@@ -142,7 +141,8 @@ namespace MahjongLogic
             // The hand analysis part (ronchk and its helpers) is very complex and will be ported next.
 
             // A placeholder for the complex hand analysis result
-            int a_f = 0; // (mf_fs[atm_f] | mf_f[atm_f] | mf_fj[atm_f] | mf_fr[atm_f] | mf_fjr[atm_f]);
+            // (mf_fs[atm_f] | mf_f[atm_f] | mf_fj[atm_f] | mf_fr[atm_f] | mf_fjr[atm_f]);
+            int a_f = (mf_fs[atm_f] | mf_f[atm_f] | mf_fj[atm_f] | mf_fr[atm_f] | mf_fjr[atm_f]);
 
             if ((a_f & AgariFl) == 0)
             {
@@ -151,13 +151,14 @@ namespace MahjongLogic
                 {
                     kokusi_yk();
                 }
-                /*else if ((agr_flg & 4) != 0)
+                else if ((agr_flg & 4) != 0) // ShisanPutou
                 {
                     total_han++;
-                    yaku_wk0 |= (int)Yaku.ShisanPutou;
-                }*/
+                    yaku_wk0 |= (int)YakuGroup0.ShisanPutou;
+                }
                 else
                 {
+                    // Chitoitsu
                     toitu7_yk();
                     honrou_yk_1();
                     hontin_yk();
@@ -166,7 +167,7 @@ namespace MahjongLogic
                     tuuiso_yk();
                 }
 
-                // if ((yaku_wk0 & (int)Yaku.ShisanPutou) == 0)
+                if ((yaku_wk0 & (int)YakuGroup0.ShisanPutou) == 0)
                 {
                     tenhou_yk();
                     if (yaku_wk0 != 0)
@@ -215,7 +216,26 @@ namespace MahjongLogic
         private void mf_work_copy()
         {
             // This function copies the correct winning hand combination into mf_d
-            // It depends on the full hand analysis logic.
+            if ((mf_fs[atm_f] & AgariFl) != 0)
+            {
+                Array.Copy(mf_fs, mf_d, mfd_end);
+            }
+            else if ((mf_f[atm_f] & AgariFl) != 0)
+            {
+                Array.Copy(mf_f, mf_d, mfd_end);
+            }
+            else if ((mf_fj[atm_f] & AgariFl) != 0)
+            {
+                Array.Copy(mf_fj, mf_d, mfd_end);
+            }
+            else if ((mf_fr[atm_f] & AgariFl) != 0)
+            {
+                Array.Copy(mf_fr, mf_d, mfd_end);
+            }
+            else if ((mf_fjr[atm_f] & AgariFl) != 0)
+            {
+                Array.Copy(mf_fjr, mf_d, mfd_end);
+            }
         }
 
 
@@ -280,7 +300,8 @@ namespace MahjongLogic
             int count = 0;
             for (int i = 0; i < 14; i++)
             {
-                if ((tmp_ronh & 0xFFFF) == tmp_wk[i]) count++;
+                // AMask (0xFFFF) 相当
+                if ((tmp_ronh & 0xFFFF) == tmp_wk_v[i]) count++;
             }
             return count >= 2;
         }
@@ -331,12 +352,128 @@ namespace MahjongLogic
         }
 
         private void suukan_yk() { }
-        private void daisan_yk() { }
-        private void suusi_yk() { }
-        private void tinrou_yk() { }
-        private void ryuiso_yk() { }
-        private void tyuren_yk() { }
-        private void suuank_yk() { }
+        private void daisan_yk()
+        {
+            int c = 0;
+            for (int i = 0; i < mf_d[ank_c]; i++)
+            {
+                if ((mf_d[ank_t + i] & 0x3F) >= 0x35) c++;
+            }
+
+            if (c == 3)
+            {
+                yaku_wk0 |= (int)YakuGroup0.Dai3gen;
+                total_han++;
+            }
+            else if (c == 2)
+            {
+                if (mf_d[atm_t] >= 0x35)
+                {
+                    yaku_wk2 |= (int)YakuGroup2.Syo3gen;
+                    total_han++;
+                }
+            }
+        }
+        private void suusi_yk()
+        {
+            int c = 0;
+            for (int i = 0; i < mf_d[ank_c]; i++)
+            {
+                if ((mf_d[ank_t + i] & 0x3F) < 0x35 && (mf_d[ank_t + i] & 0x3F) > 0x30) c++;
+            }
+
+            if (c == 4)
+            {
+                yaku_wk0 |= (int)YakuGroup0.DaiSusiho;
+                total_han++;
+            }
+            else if (c == 3)
+            {
+                if ((mf_d[atm_t] & 0x3F) < 0x35 && (mf_d[atm_t] & 0x3F) > 0x30)
+                {
+                    yaku_wk0 |= (int)YakuGroup0.SyoSusiho;
+                    total_han++;
+                }
+            }
+        }
+        private void tinrou_yk()
+        {
+            if (iqhai_cnt() == 14)
+            {
+                yaku_wk0 |= (int)YakuGroup0.Tinroutou;
+                total_han++;
+            }
+        }
+        private void ryuiso_yk()
+        {
+            for (int i = 0; i < 14; i++)
+            {
+                if (!ryhai_chk(tmp_wk_v[i] & 0x3f)) return;
+            }
+            yaku_wk0 |= (int)YakuGroup0.Ryuisou;
+            total_han++;
+        }
+        private bool ryhai_chk(int c)
+        {
+            if (c == 0x36) return true; // Hatsu
+            if ((c & 0x30) != 0x20) return false; // Souzu only
+            int a = c & 0xf;
+            if (a == 1) return false;
+            if (a <= 4 || a == 6 || a == 8) return true; // 2,3,4,6,8 Sou
+            return false;
+        }
+
+        private void tyuren_yk()
+        {
+            int[] turen_data = { 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 0xff };
+            int c = tmp_wk_v[0] & 0x30;
+            if (c == 0x30) return; // Not a suit
+
+            int j = 0;
+            for (int i = 0; i < 14; i++)
+            {
+                if (tmp_wk_v[i] == (turen_data[j] | c))
+                {
+                    j++;
+                }
+            }
+            if (j == 13)
+            {
+                total_han++;
+                int count = 0;
+                for (int i = 0; i < 14; i++)
+                {
+                    if ((tmp_ronh & 0xFFFF) == tmp_wk_v[i]) count++;
+                }
+                if (count == 2 || count == 4)
+                {
+                    yaku_wk0 |= (int)YakuGroup0.Tyuurenpoutou13;
+                }
+                else
+                {
+                    yaku_wk0 |= (int)YakuGroup0.Tyuurenpoutou;
+                }
+            }
+        }
+        private void suuank_yk()
+        {
+            if (mf_d[ank_c] != 4 || (tmp_ply_flg & NomNaki) != 0) return;
+
+            if ((tmp_ply_flg & RonNaki) != 0)
+            {
+                if (mf_d[atm_t] != (tmp_ronh & 0xFFFF)) return;
+            }
+
+            if (mf_d[atm_t] == (tmp_ronh & 0xFFFF))
+            {
+                yaku_wk0 |= (int)YakuGroup0.Suankoutanki;
+            }
+            else
+            {
+                yaku_wk0 |= (int)YakuGroup0.Suankou;
+            }
+            total_han++;
+        }
         private const int NomNaki = (1 << 2);
 
         private void tanyao_yk()
@@ -363,7 +500,7 @@ namespace MahjongLogic
         private bool rya_chk()
         {
             if (rya_chk_0()) return true;
-            // if (hed_chng() && rya_chk_0()) return true; // hed_chng is complex, handle later
+            if (hed_chng() && rya_chk_0()) return true;
             return false;
         }
 
@@ -427,7 +564,10 @@ namespace MahjongLogic
         {
             if (mf_d[jun_c] < 3) return;
             if (dojun_yk_a()) return;
-            // hed_chng logic is complex, skipping for now
+            if (hed_chng())
+            {
+                dojun_yk_a();
+            }
         }
 
         private bool dojun_yk_a()
@@ -466,7 +606,10 @@ namespace MahjongLogic
         {
             if (mf_d[jun_c] < 3) return;
             if (iituu_chk()) return;
-            // hed_chng logic is complex, skipping for now
+            if (hed_chng())
+            {
+                iituu_chk();
+            }
         }
 
         private bool iituu_chk()
@@ -881,67 +1024,6 @@ namespace MahjongLogic
             }
             return false;
         }
-        private void sanankou_yk()
-        {
-            int c = 0;
-            for (int i = 0; i < mf_d[ank_c]; i++)
-            {
-                if ((mf_d[ank_t + i] & NakiFl) == 0) // Check if concealed
-                {
-                    int a = mf_d[ank_t + i] & 0x3f;
-                    if ((tmp_ply_flg & RonNaki) != 0 && a == (tmp_ronh & 0xFFFF))
-                    {
-                        // Complex logic for ron on a triplet, simplified for now
-                    }
-                    else
-                    {
-                        c++;
-                    }
-                }
-            }
-            if (c == 3)
-            {
-                yaku_wk2 |= (int)YakuGroup2.Sanankou;
-                total_han++;
-            }
-        }
-
-        private void sankantu_yk()
-        {
-            int c = 0;
-            for (int i = 0; i < mf_d[ank_c]; i++)
-            {
-                if ((mf_d[ank_t + i] & AkanFl) != 0) c++;
-            }
-            if (c == 3)
-            {
-                yaku_wk2 |= (int)YakuGroup2.Sankantu;
-                total_han++;
-            }
-        }
-
-        private void syo3gen_yk()
-        {
-            int c = 0;
-            for (int i = 0; i < mf_d[ank_c]; i++)
-            {
-                if ((mf_d[ank_t + i] & 0x3F) >= 0x35) c++;
-            }
-            if (c == 2 && mf_d[atm_t] >= 0x35)
-            {
-                yaku_wk2 |= (int)YakuGroup2.Syo3gen;
-                total_han++;
-            }
-        }
-
-        private void honroutou_yk()
-        {
-            if ((mf_d[ank_c] == 4) && (jihai_cnt() + iqhai_cnt()) == 14)
-            {
-                yaku_wk2 |= (int)YakuGroup2.Honrou;
-                total_han++;
-            }
-        }
 
         private void ryanpei_yk()
         {
@@ -1014,7 +1096,20 @@ namespace MahjongLogic
             return c;
         }
 
+        // ===================================================================
+        // === ここから C++ (MahjongSub.cpp) の ronchk/men_chk 移植ブロック ===
+        // ===================================================================
 
+        // MahjongSub.h
+        private const int TMask = 0x0fff;    // ソートに影響しないフラグを除外
+        // MahjongSub.h
+        private const int SercFl = (1 << 11); // Set End Flasgすでにセットした。
+        // MahjongSub.h
+        private const int FixFl = (NakiFl | AkanFl); //位置固定
+        // MahjongSub.h
+        private const int FixsFl = (NakiFl | SercFl | AkanFl);  //サーチ済み総合
+        private const int PkMask = 0x30; // 牌の種類(萬筒索/字牌)マスク
+        // --- MahjongLogic.cs の から定義されている ---
         private int[] mf_fs = new int[mfd_end];
         private int[] mf_f = new int[mfd_end];
         private int[] mf_fj = new int[mfd_end];
@@ -1025,274 +1120,605 @@ namespace MahjongLogic
         private const int ank_c = 1;
         private const int jun_c = 2;
         private const int atm_t = 3;
-        private const int ank_t = 4;
-        private const int jun_t = 8;
+        private const int ank_t = 4; // 4, 5, 6, 7
+        private const int jun_t = 8; // 8, 9, 10, 11
+        // (mf_d の残りは 12, 13, 14)
 
+        /// <summary>
+        /// 上がり判定のメインルーチン
+        /// C++の ronchk()
+        /// </summary>
         private bool ronchk()
         {
-            for (int i = 0; i < mfd_end; i++)
-            {
-                mf_f[i] = mf_fs[i] = mf_fj[i] = mf_fr[i] = mf_fjr[i] = 0;
-            }
-
+            //
             men_chk();
 
-            if (tmen_chk())
-            {
-                return true;
-            }
+            //
+            // C++の ronchk_10() のロジック
+            ronchk_10(mf_fs); //
+            ronchk_10(mf_f); //
+            ronchk_10(mf_fj); //
+            ronchk_10(mf_fr); //
+            ronchk_10(mf_fjr); //
 
-            return ronchk_spc();
-        }
+            //
+            if ((agr_flg & AgariFl) != 0) return true;
 
-        private void men_chk()
-        {
-            // Search for normal winning hands (4 melds, 1 pair)
-            ankj_sr(tmp_wk, mf_f); // Search for triplets first
-            juna_sr(tmp_wk, mf_f); // Then search for sequences
-        }
+            //
+            if (ronchk_spc()) return true; // 特殊役 (七対子, 国士)
 
-        private bool tmen_chk()
-        {
-            // Check if a valid hand was found
-            if ((mf_f[atm_f] & AgariFl) != 0) return true;
-            if ((mf_fs[atm_f] & AgariFl) != 0) return true;
-            if ((mf_fj[atm_f] & AgariFl) != 0) return true;
-            if ((mf_fr[atm_f] & AgariFl) != 0) return true;
-            if ((mf_fjr[atm_f] & AgariFl) != 0) return true;
             return false;
         }
 
+        /// <summary>
+        /// 上がり形か判定 (4面子1雀頭)
+        /// C++の ronchk_10()
+        /// </summary>
+        private void ronchk_10(int[] mf)
+        {
+            if (mf[atm_f] == 0) return; // (頭がない)
+            if ((mf[ank_c] + mf[jun_c]) != 4) return; // (4面子ない)
+
+            mf[atm_f] |= AgariFl; // (上がりフラグ)
+            agr_flg |= AgariFl; //
+        }
+
+        /// <summary>
+        /// 特殊な上がり形 (国士無双など)
+        /// C++の ronchk_spc()
+        /// </summary>
         private bool ronchk_spc()
         {
-            // Check for special hands
-            if (men7_chk(tmp_wk, mf_fs)) // Check for 7 pairs (Chii Toitsu)
+            // C++の spc_men と同じ
+            // ※ tmp_wk_v は CheckWin() でソート済み
+            int[] wk = (int[])tmp_wk_v.Clone();
+            int[] mf = new int[mfd_end];
+
+            if (men7_chk(wk, mf)) //
             {
-                agr_flg = 1;
+                agr_flg = AgariFl | 1; // 0x81 ７対
+                Array.Copy(mf, mf_fs, mfd_end);
                 return true;
             }
-            if (men19_chk(tmp_wk, mf_fs)) // Check for 13 Orphans (Kokushi Musou)
+            if (men19_chk(wk, mf)) //
             {
-                agr_flg = 2;
+                if (mf[atm_f] == 13) //
+                {
+                    agr_flg = AgariFl | 2; // 0x82 国志無双
+                    Array.Copy(mf, mf_fs, mfd_end);
+                    return true;
+                }
+            }
+            if (sisan_puta(wk, mf)) //
+            {
+                agr_flg = AgariFl | 4; // 0x84 Si sanputa
+                Array.Copy(mf, mf_fs, mfd_end);
                 return true;
             }
-            if (sisan_puta(tmp_wk, mf_fs)) // Check for 13 unrelated tiles
-            {
-                agr_flg = 4;
-                return true;
-            }
+
             return false;
         }
 
+
+        /// <summary>
+        /// 面子探索のメインルーチン
+        /// C++の men_chk()
+        /// </summary>
+        private void men_chk()
+        {
+            int i;
+            // C++の tmp_wk は CheckWin() ですでにソート＆tmp_wk_vにコピー済み
+            //
+
+            agr_flg = 0; //
+
+            // 各探索パターンの結果を初期化
+            for (i = 0; i < mfd_end; i++)
+            {
+                mf_d[i] = mf_fs[i] = mf_f[i] = mf_fj[i] = mf_fr[i] = mf_fjr[i] = 0;
+            }
+
+            //....special check.....
+            // C++の spc_men は ronchk_spc で別途チェック
+            // ここでは通常手を探索
+
+            //.........spectial one check....
+            // 1,1,1,4,5,5,6,7,8,8,8,9,9 などの特殊な形
+            //
+            int[] wk_fs = (int[])tmp_wk_v.Clone();
+            anko_sp(wk_fs, mf_fs); //
+            atm_srh(wk_fs, mf_fs); //
+            suji_chk(wk_fs, mf_fs); //
+            sjatm_chk(wk_fs, mf_fs); //
+
+            //.....anko juntu..left to right 
+            //
+            int[] wk_f = (int[])tmp_wk_v.Clone();
+            ankj_sr(wk_f, mf_f); //
+            atm_srh(wk_f, mf_f); //
+            suji_chk(wk_f, mf_f); //
+            sjatm_chk(wk_f, mf_f); //
+
+            //...juntu to anko
+            //
+            int[] wk_fj = (int[])tmp_wk_v.Clone();
+            juna_sr(wk_fj, mf_fj); //
+            atm_srh(wk_fj, mf_fj); //
+            suji_chk(wk_fj, mf_fj); //
+            sjatm_chk(wk_fj, mf_fj); //
+
+            //...anko juntu...right to left
+            //
+            int[] wk_fr = (int[])tmp_wk_v.Clone();
+            ankjr_sr(wk_fr, mf_fr); //
+            atm_srh(wk_fr, mf_fr); //
+            suji_chk(wk_fr, mf_fr); //
+            sjatm_chk(wk_fr, mf_fr); //
+
+            //...juntu anko..
+            //
+            int[] wk_fjr = (int[])tmp_wk_v.Clone();
+            junar_sr(wk_fjr, mf_fjr); //
+            atm_srh(wk_fjr, mf_fjr); //
+            suji_chk(wk_fjr, mf_fjr); //
+            sjatm_chk(wk_fjr, mf_fjr); //
+        }
+
+        /// <summary>
+        /// 特殊な形のテンパイ探索 (1,1,1,4,5,5,6,7,8,8,8,9,9 など)
+        /// C++の anko_sp()
+        /// </summary>
+        private void anko_sp(int[] wk, int[] mf)
+        {
+            naki_men(wk, mf); // (鳴き面子を分離)
+            for (int i = 0; i < 12; i++)
+            {
+                if ((wk[i] & FixsFl) == 0) //
+                    ank_srh(wk, mf, i); //
+            }
+            for (int i = 0; i < 12; i++)
+            {
+                if ((wk[i] & FixsFl) == 0) //
+                    jun_srh(wk, mf, i); //
+            }
+        }
+
+        /// <summary>
+        /// 刻子→順子 の順で探索 (左から)
+        /// C++の ankj_sr()
+        /// </summary>
         private void ankj_sr(int[] wk, int[] mf)
         {
-            if (mf[ank_c] >= 4)
+            naki_men(wk, mf); // (鳴き面子を分離)
+            for (int i = 0; i < 12; i++)
             {
-                // Found 4 melds, check for pair
-                atm_srh(wk, mf);
-                return;
-            }
-
-            if (!ank_srh(wk, mf, 0))
-            {
-                // No more triplets found, check for pair
-                atm_srh(wk, mf);
-            }
-        }
-
-        private bool ank_srh(int[] wk, int[] mf, int ix)
-        {
-            bool found = false;
-            for (int i = ix; i < 12; i++)
-            {
-                if ((wk[i] & 0xFFF) != 0xFFF) // Check if not already part of a meld
+                if ((wk[i] & FixsFl) == 0) //
                 {
-                    if (wk[i] == wk[i + 1] && wk[i] == wk[i + 2])
-                    {
-                        found = true;
-                        int[] next_wk = (int[])wk.Clone();
-                        int[] next_mf = (int[])mf.Clone();
-
-                        next_mf[ank_t + next_mf[ank_c]] = wk[i];
-                        next_mf[ank_c]++;
-
-                        next_wk[i] = next_wk[i + 1] = next_wk[i + 2] = 0xFFF; // Mark as used
-
-                        // Recurse
-                        ankj_sr(next_wk, next_mf);
-                        juna_sr(next_wk, next_mf);
-                    }
-                }
-            }
-            return found;
-        }
-
-        private void atm_srh(int[] wk, int[] mf)
-        {
-            for (int i = 0; i < 13; i++)
-            {
-                if ((wk[i] & 0xFFF) != 0xFFF)
-                {
-                    if (wk[i] == wk[i + 1])
-                    {
-                        mf[atm_t] = wk[i];
-                        mf[atm_f] = AgariFl; // Found a pair, this is a winning hand
-                        // Here we would save the complete hand combination
-                        // For now, just marking it as a win.
-                        return;
-                    }
+                    if (ank_srh(wk, mf, i)) // (刻子探索)
+                        jun_srh(wk, mf, i); // (順子探索)
                 }
             }
         }
+
+        /// <summary>
+        /// 順子→刻子 の順で探索 (左から)
+        /// C++の juna_sr()
+        /// </summary>
         private void juna_sr(int[] wk, int[] mf)
         {
-            if ((mf[ank_c] + mf[jun_c]) >= 4)
+            naki_men(wk, mf); //
+            for (int i = 0; i < 12; i++)
             {
-                atm_srh(wk, mf);
-                return;
-            }
-
-            if (!jun_srh(wk, mf, 0))
-            {
-                atm_srh(wk, mf);
+                if ((wk[i] & FixsFl) == 0) //
+                {
+                    if (jun_srh(wk, mf, i)) // (順子探索)
+                        ank_srh(wk, mf, i); // (刻子探索)
+                }
             }
         }
 
+        /// <summary>
+        /// 刻子→順子 の順で探索 (右から)
+        /// C++の ankjr_sr()
+        /// </summary>
+        private void ankjr_sr(int[] wk, int[] mf)
+        {
+            naki_men(wk, mf); //
+            for (int i = 13; i > 1; --i) //
+            {
+                if ((wk[i] & FixsFl) == 0) //
+                {
+                    if (ankr_srh(wk, mf, i)) // (刻子探索)
+                        junr_srh(wk, mf, i); // (順子探索)
+                }
+            }
+        }
+
+        /// <summary>
+        /// 順子→刻子 の順で探索 (右から)
+        /// C++の junar_sr()
+        /// </summary>
+        private void junar_sr(int[] wk, int[] mf)
+        {
+            naki_men(wk, mf); //
+            for (int i = 13; i > 1; --i) //
+            {
+                if ((wk[i] & FixsFl) == 0) //
+                {
+                    if (junr_srh(wk, mf, i)) // (順子探索)
+                        ankr_srh(wk, mf, i); // (刻子探索)
+                }
+            }
+        }
+
+        /// <summary>
+        /// 刻子(コーツ)を見つける
+        /// C++の ank_srh()
+        /// </summary>
+        /// <returns>true=見つからない, false=見つけた</returns>
+        private bool ank_srh(int[] wk, int[] mf, int ix)
+        {
+            if (wk[ix] == wk[ix + 1] && wk[ix] == wk[ix + 2]) //
+            {
+                //On Anko
+                mf[ank_t + mf[ank_c]] = wk[ix]; //
+                ++mf[ank_c]; //
+                wk[ix] |= SercFl; //
+                wk[ix + 1] |= SercFl;
+                wk[ix + 2] |= SercFl;
+                return false;
+            }
+            return true; //
+        }
+
+        /// <summary>
+        /// 刻子(コーツ)を見つける (右から)
+        /// C++の ankr_srh()
+        /// </summary>
+        /// <returns>true=見つからない, false=見つけた</returns>
+        private bool ankr_srh(int[] wk, int[] mf, int ix)
+        {
+            if (wk[ix] == wk[ix - 1] && wk[ix] == wk[ix - 2]) //
+            {
+                //On Anko
+                mf[ank_t + mf[ank_c]] = wk[ix]; //
+                ++mf[ank_c]; //
+                wk[ix] |= SercFl; //
+                wk[ix - 1] |= SercFl;
+                wk[ix - 2] |= SercFl;
+                return false;
+            }
+            return true; //
+        }
+
+        /// <summary>
+        /// 順子(ジュンツ)を見つける
+        /// C++の jun_srh()
+        /// </summary>
+        /// <returns>true=見つからない, false=見つけた</returns>
         private bool jun_srh(int[] wk, int[] mf, int ix)
         {
-            bool found = false;
-            for (int i = ix; i < 12; i++)
+            if ((wk[ix] & PkMask) == PkJiha) return true; //
+
+            int d = wk[ix] + 1;
+            for (int i = ix + 1; i < 14; ++i) //
             {
-                if ((wk[i] & 0xFFF) != 0xFFF)
+                if ((wk[i] & FixsFl) == 0 && d == wk[i]) //
                 {
-                    int p1 = wk[i];
-                    int p2 = -1, p2_ix = -1;
-                    int p3 = -1, p3_ix = -1;
-
-                    // Find next tile for sequence
-                    for (int j = i + 1; j < 14; j++)
+                    int j = i;
+                    ++d;
+                    ++i;
+                    for (; i < 14; ++i) //
                     {
-                        if ((wk[j] & 0xFFF) != 0xFFF && wk[j] > p1)
+                        if ((wk[i] & FixsFl) == 0 && d == wk[i]) //
                         {
-                            if (wk[j] == p1 + 1)
-                            {
-                                p2 = wk[j];
-                                p2_ix = j;
-                                break;
-                            }
+                            mf[jun_t + mf[jun_c]] = wk[ix]; //
+                            ++mf[jun_c]; //
+                            wk[ix] |= SercFl; //
+                            wk[j] |= SercFl;
+                            wk[i] |= SercFl;
+                            return false;
                         }
-                    }
-
-                    if (p2 != -1)
-                    {
-                        // Find third tile for sequence
-                        for (int k = p2_ix + 1; k < 14; k++)
-                        {
-                            if ((wk[k] & 0xFFF) != 0xFFF && wk[k] > p2)
-                            {
-                                if (wk[k] == p2 + 1)
-                                {
-                                    p3 = wk[k];
-                                    p3_ix = k;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (p3 != -1)
-                    {
-                        found = true;
-                        int[] next_wk = (int[])wk.Clone();
-                        int[] next_mf = (int[])mf.Clone();
-
-                        next_mf[jun_t + next_mf[jun_c]] = p1;
-                        next_mf[jun_c]++;
-
-                        next_wk[i] = next_wk[p2_ix] = next_wk[p3_ix] = 0xFFF;
-
-                        // Recurse
-                        juna_sr(next_wk, next_mf);
                     }
                 }
             }
-            return found;
+            return true; //
         }
+
+        /// <summary>
+        /// 順子(ジュンツ)を見つける (右から)
+        /// C++の junr_srh()
+        /// </summary>
+        /// <returns>true=見つからない, false=見つけた</returns>
+        private bool junr_srh(int[] wk, int[] mf, int ix)
+        {
+            if ((wk[ix] & PkMask) == PkJiha) return true; //
+
+            int d = wk[ix] - 1;
+            for (int i = ix - 1; i > 0; --i) //
+            {
+                if ((wk[i] & FixsFl) == 0 && d == wk[i]) //
+                {
+                    int j = i;
+                    --d;
+                    --i;
+                    for (; i >= 0; --i) //
+                    {
+                        if ((wk[i] & FixsFl) == 0 && d == wk[i]) //
+                        {
+                            mf[jun_t + mf[jun_c]] = wk[ix] - 2; //
+                            ++mf[jun_c]; //
+                            wk[ix] |= SercFl; //
+                            wk[j] |= SercFl;
+                            wk[i] |= SercFl;
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true; //
+        }
+
+        /// <summary>
+        /// 雀頭(アタマ)を見つける
+        /// C++の atm_srh()
+        /// </summary>
+        private void atm_srh(int[] wk, int[] mf)
+        {
+            for (int i = 0; i < 13; ++i)
+            {
+                //
+                if ((wk[i] & FixsFl) == 0 && wk[i] == wk[i + 1])
+                {
+                    mf[atm_t] = wk[i]; //
+                    ++mf[atm_f]; //
+                    wk[i] |= SercFl; //
+                    wk[i + 1] |= SercFl;
+                    ++i;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 筋(スジ)で頭を見つける (222 34 -> 22 / 234)
+        /// C++の sjatm_chk()
+        /// </summary>
+        private void sjatm_chk(int[] wk, int[] mf)
+        {
+            if (mf[atm_f] != 0) return; //
+            if (mf[ank_c] == 0) return; //
+            if ((mf[ank_c] + mf[jun_c]) != 4) return; //
+
+            for (int i = 0; i < 14; ++i)
+            {
+                if ((wk[i] & FixsFl) == 0) //
+                {
+                    if ((wk[i] & PkMask) == PkJiha || i >= 13) return; //
+                    int k = i;
+                    int d = wk[i++] + 1; //
+                    for (; i < 14; ++i)
+                    {
+                        if (wk[i] == d) // 3,4 の 4 を見つけた
+                        {
+                            int e = d - 2; // 2
+                            ++d; // 5
+                            for (int j = 0; j < mf[ank_c]; ++j) //
+                            {
+                                if (d == mf[ank_t + j]) // 555 があるか (3,4 + 555)
+                                {
+                                    //
+                                    // 3,4, 5,5,5 -> 3,4,5 / 5,5 (頭)
+                                    // 刻子(555)を消し、順子(345)と頭(55)を追加
+                                    mf[ank_t + j] = 0; //
+                                    for (int jj = j + 1; jj < mf[ank_c]; ++jj) //
+                                    {
+                                        mf[ank_t + jj - 1] = mf[ank_t + jj];
+                                    }
+                                    mf[ank_t + mf[ank_c] - 1] = 0; // 末尾クリア
+                                    --mf[ank_c]; //
+
+                                    mf[jun_t + mf[jun_c]] = d - 2; // 345
+                                    ++mf[jun_c]; //
+
+                                    mf[atm_t] = d; // 頭 55
+                                    ++mf[atm_f]; //
+                                    wk[i] |= SercFl; //
+                                    wk[k] |= SercFl; //
+                                    return;
+                                }
+                                else if (e == mf[ank_t + j]) // 222 があるか (222 + 3,4)
+                                {
+                                    //
+                                    // 2,2,2 ,3,4 -> 2,2 (頭) / 2,3,4
+                                    mf[ank_t + j] = 0; //
+                                    for (int jj = j + 1; jj < mf[ank_c]; ++jj) //
+                                    {
+                                        mf[ank_t + jj - 1] = mf[ank_t + jj];
+                                    }
+                                    mf[ank_t + mf[ank_c] - 1] = 0;
+                                    --mf[ank_c]; //
+
+                                    mf[jun_t + mf[jun_c]] = e; // 234
+                                    ++mf[jun_c]; //
+
+                                    mf[atm_t] = e; // 頭 22
+                                    ++mf[atm_f]; //
+                                    wk[i] |= SercFl; //
+                                    wk[k] |= SercFl; //
+                                    return;
+                                }
+                            }
+                            return; //
+                        }
+                    }
+                    return; //
+                }
+            }
+        }
+
+        /// <summary>
+        /// 筋(スジ)で頭を見つける (22 345 -> 22 / 345)
+        /// C++の suji_chk()
+        /// </summary>
+        private void suji_chk(int[] wk, int[] mf)
+        {
+            if (mf[atm_f] != 0 || mf[jun_c] == 0) return; //
+            if ((mf[ank_c] + mf[jun_c]) != 4) return; //
+            suji_chk_00(wk, mf); //
+        }
+
+        /// <summary>
+        /// C++の suji_chk_00()
+        /// </summary>
+        private bool suji_chk_00(int[] wk, int[] mf)
+        {
+            for (int i = 0; i < 14; ++i)
+            {
+                if ((wk[i] & FixsFl) == 0) //
+                {
+                    if ((wk[i] & PkMask) == PkJiha || i >= 13) return false; //
+                    int k = i;
+                    int d = wk[i++] + 3; //
+                    for (; i < 14; ++i)
+                    {
+                        if (wk[i] == d) // 2 と 5 を見つけた
+                        {
+                            d -= 3; // d = 2
+                            for (int j = 0; j < mf[jun_c]; ++j) //
+                            {
+                                if (d == mf[jun_t + j]) // 順子(234) があるか
+                                {
+                                    // 2, 5 + 2,3,4 -> 2,2 (頭) / 3,4,5 (順子)
+                                    ++mf[jun_t + j]; // 234 -> 345
+                                    mf[atm_t] = d; // 頭 22
+                                    ++mf[atm_f]; //
+                                    wk[i] |= SercFl; //
+                                    wk[k] |= SercFl; //
+                                    return true;
+                                }
+                            }
+                            return false; //
+                        }
+                    }
+                    return false; //
+                }
+            }
+            return false; //
+        }
+
+
+        /// <summary>
+        /// 七対子 (7ペア)
+        /// C++の men7_chk()
+        /// </summary>
         private bool men7_chk(int[] wk, int[] mf)
         {
-            int i, j, c;
-            for (i = 0; i < 13; i++)
+            for (int i = 0; i < 13; i += 2) //
             {
-                if (wk[i] == wk[i + 1])
+                if (wk[i] == wk[i + 1]) //
                 {
-                    i++;
+                    if (i < 12)
+                    {
+                        if (wk[i] == wk[i + 2]) return false; // 4枚使い
+                    }
+                    ++mf[atm_f]; //
                 }
                 else
                 {
-                    return false;
+                    return false; //
                 }
             }
-
-            // It's 7 pairs, now check if it's also Ryanpei-kou
-            c = 0;
-            for (i = 0; i < 6; i++)
-            {
-                for (j = i + 1; j < 7; j++)
-                {
-                    if ((wk[i * 2] + 1) == wk[j * 2])
-                    {
-                        if ((wk[i * 2] + 2) == wk[j * 2])
-                        {
-                            c++;
-                        }
-                    }
-                }
-            }
-            if (c >= 2) mf[jun_c] = 2; // Flag for Ryanpeikou potential
-
-            mf[atm_f] = AgariFl;
-            return true;
+            return true; //
         }
 
+        /// <summary>
+        /// 国士無双 (13么九)
+        /// C++の men19_chk()
+        /// </summary>
         private bool men19_chk(int[] wk, int[] mf)
         {
-            int[] kokusi_tbl = { 0x01, 0x09, 0x11, 0x19, 0x21, 0x29, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37 };
-            int i, j, c = 0;
-            bool head = false;
-
-            for (i = 0; i < 13; i++)
+            mf[atm_f] = 0; //
+            for (int i = 0; i < 14; ++i)
             {
-                for (j = 0; j < 14; j++)
+                int tile = wk[i] & 0x3F;
+                if (tile >= PkJiha || (tile & 0xf) == 1 || (tile & 0xf) == 9) //
                 {
-                    if (kokusi_tbl[i] == (wk[j] & 0x3F))
+                    if (i == 0) ++mf[atm_f]; //
+                    else if (wk[i] != wk[i - 1]) ++mf[atm_f]; //
+                }
+                else
+                {
+                    if (wk[i] != 0) return false; // 么九牌以外
+                }
+            }
+            return true; //
+        }
+
+        /// <summary>
+        /// 十三不塔
+        /// C++の sisan_puta()
+        /// </summary>
+        private bool sisan_puta(int[] wk, int[] mf)
+        {
+            //
+            // C++の実装では `ck_no`, `tmp_ply_flg`, `sute_pai_cnt`, `ply_flg` を
+            // グローバル変数として参照していますが、C#のクラス内では
+            // `this.tmp_ply_flg` などに置き換える必要があります。
+            // (この移植では `CheckWin` 経由で `tmp_ply_flg` はセットされています)
+
+            // if (ck_no != 0) return false; // (プレイヤーのみ)
+            if ((tmp_ply_flg & RonNaki) != 0) return false; // ロンではない
+            // if (sute_pai_cnt[ck_no] != 0) return false; // 配牌時
+            // for(int i=0; i<4; ++i) if((ply_flg[i]&NomNaki)!=0) return false; // 誰も鳴いてない
+
+            int pairs = 0;
+            for (int i = 0; i < 13; ++i)
+            {
+                if (wk[i] == wk[i + 1]) pairs++; //
+
+                if ((wk[i] & 0x30) != 0x30) // 数牌
+                {
+                    if (wk[i] == (wk[i + 1] - 1)) return false; // 1,2
+                    if (wk[i] == (wk[i + 1] - 2)) return false; // 1,3
+                }
+            }
+            if (pairs != 1) return false; // ペアが1組だけ
+            return true; //
+        }
+
+        /// <summary>
+        /// 鳴き面子を分離する
+        /// C++の naki_men()
+        /// </summary>
+        private void naki_men(int[] wk, int[] mf)
+        {
+            for (int i = 0; i < mfd_end; i++) mf[i] = 0; //
+
+            for (int i = 0; i < 12; ++i)
+            {
+                if ((wk[i] & FixFl) != 0) // (鳴き or カン)
+                {
+                    if (wk[i] == wk[i + 1])
                     {
-                        c |= (1 << i);
-                        break;
+                        //Anko on
+                        mf[ank_t + mf[ank_c]] = wk[i]; //
+                        ++mf[ank_c]; //
+                        i += 2; //
+                    }
+                    else
+                    {
+                        //Juntu on
+                        mf[jun_t + mf[jun_c]] = wk[i]; //
+                        ++mf[jun_c]; //
+                        i += 2; //
                     }
                 }
             }
-
-            if (c != 0x1FFF) return false;
-
-            // Check for the pair
-            for (i = 0; i < 13; i++)
-            {
-                if (wk[i] == wk[i + 1])
-                {
-                    head = true;
-                    break;
-                }
-            }
-
-            if (head)
-            {
-                mf[atm_f] = AgariFl;
-                return true;
-            }
-
-            return false;
         }
-        private bool sisan_puta(int[] wk, int[] mf) { /* Porting this check */ return false; }
+
+        // ===================================================================
+        // === C++ (MahjongSub.cpp) の ronchk/men_chk 移植ブロック ここまで ===
+        // ===================================================================
 
         private void dora_check()
         {
@@ -1304,7 +1730,7 @@ namespace MahjongLogic
             int c = 0;
             for (int i = 0; i < 14; i++)
             {
-                if ((tmp_wk[i] & 0x30) == 0x30) c++;
+                if ((tmp_wk_v[i] & 0x30) == 0x30) c++;
             }
             return c;
         }
@@ -1314,7 +1740,7 @@ namespace MahjongLogic
             int c = 0;
             for (int i = 0; i < 14; i++)
             {
-                if ((tmp_wk[i] & 0x30) != 0x30 && ((tmp_wk[i] & 0xf) == 1 || (tmp_wk[i] & 0xf) == 9)) c++;
+                if ((tmp_wk_v[i] & 0x30) != 0x30 && ((tmp_wk_v[i] & 0xf) == 1 || (tmp_wk_v[i] & 0xf) == 9)) c++;
             }
             return c;
         }
@@ -1322,27 +1748,145 @@ namespace MahjongLogic
         private int same_hai_chk()
         {
             int c = 0, d;
+            if (tmp_wk_v.Length == 0 || tmp_wk_v[0] == 0) return -1; // Guard clause
+
             for (int i = 0; i < 14; i++)
             {
-                if ((d = (tmp_wk[i] & 0x30)) != 0x30)
+                if (tmp_wk_v[i] == 0) continue; // Skip padding
+
+                if ((d = (tmp_wk_v[i] & 0x30)) != 0x30)
                 {
+                    // Suit tile
                     for (++i; i < 14; ++i)
                     {
-                        if ((tmp_wk[i] & 0x30) == 0x30)
+                        if (tmp_wk_v[i] == 0) continue;
+                        if ((tmp_wk_v[i] & 0x30) == 0x30)
                         {
                             ++c;
                         }
-                        else if ((tmp_wk[i] & 0x30) != d) return -1;
+                        else if ((tmp_wk_v[i] & 0x30) != d) return -1; // Different suit
                     }
-                    return c;
+                    return c; // 0 (Tinitu) or >0 (Honitu)
                 }
-                ++c;
+                ++c; // Honor tile
             }
-            return c;
+            return c; // All honor tiles (Tuiisou)
         }
 
 
         // Placeholder for constants that were in MahjongSub.h
         private const int AgariFl = (1 << 16);
+
+        // -----------------------------------------------------------------
+        // 外部 (DisplayManager) からの呼び出し用メソッド (ここから追加)
+        // -----------------------------------------------------------------
+
+        /// <summary>
+        /// 外部から役判定を要求するメインメソッド
+        /// </summary>
+        /// <param name="handTiles">手牌13枚 + 上がり牌1枚 (計14枚) のint配列</param>
+        /// <param name="winningTile">上がり牌 (ロンまたはツモ)</param>
+        /// <param name="playerWind">自風 (1=東, 2=南, 3=西, 4=北)</param>
+        /// <param name="roundWind">場風 (1=東, 2=南, 3=西, 4=北)</param>
+        /// <returns>役名のリスト (上がっていない場合は空)</returns>
+        public List<string> CheckWin(int[] handTiles, int winningTile, int playerWind, int roundWind)
+        {
+            // 1. 内部状態をリセット
+            yk_work_clr();
+
+            // 2. 外部から受け取った手牌を内部の tmp_wk にコピー
+            Array.Clear(tmp_wk, 0, tmp_wk.Length);
+            Array.Copy(handTiles, tmp_wk, handTiles.Length);
+
+            // 3. ツモ牌（またはロン牌）を設定
+            tmp_ronh = winningTile;
+
+            // 4. 風を設定 (C++の kaze_pai_set の簡易実装)
+            kaze0 = 0x30 | roundWind; // 場風
+            kaze1 = 0x30 | playerWind; // 自風
+
+            // 5. プレイヤー状態を設定 (仮: 門前ツモとする)
+            // ★注意: リーチ、鳴き、ロン/ツモのフラグは別途 DisplayManager から渡す必要があります
+            tmp_ply_flg = 0; // 門前・ツモ・リーチなし
+
+            // 6. 手牌をソート (ronchk の前提条件)
+            Array.Sort(tmp_wk, 0, 14);
+
+            // tmp_wk_v にもコピー (YakuCheckで使われるため)
+            Array.Clear(tmp_wk_v, 0, tmp_wk_v.Length);
+            Array.Copy(tmp_wk, tmp_wk_v, 14);
+
+            // 7. 役判定の実行
+            // ★★★注意★★★
+            // MahjongLogic.cs の ronchk() が正しく実装されていないと、ここは常に false になります。
+            bool isAgari = ronchk();
+
+            if (isAgari)
+            {
+                // 役チェックを実行
+                YakuCheck();
+
+                // 役名を取得
+                return GetYakuNames();
+            }
+
+            return new List<string>(); // 上がりではない
+        }
+
+        /// <summary>
+        /// 判定結果（役名）を取得するヘルパー
+        /// </summary>
+        public List<string> GetYakuNames()
+        {
+            List<string> names = new List<string>();
+
+            // 役満
+            for (int i = 0; i < yaku_wk0_tbl.Length; i++)
+            {
+                if ((yaku_wk0 & (1 << i)) != 0)
+                {
+                    names.Add(yaku_wk0_tbl[i]);
+                }
+            }
+
+            if (names.Count > 0) return names; // 役満の場合は他の役を表示しない
+
+            // 3-6翻
+            for (int i = 0; i < yaku_wk3_tbl.Length; i++)
+            {
+                if ((yaku_wk3 & (1 << i)) != 0)
+                {
+                    names.Add(yaku_wk3_tbl[i]);
+                }
+            }
+            // 2翻
+            for (int i = 0; i < yaku_wk2_tbl.Length; i++)
+            {
+                if ((yaku_wk2 & (1 << i)) != 0)
+                {
+                    names.Add(yaku_wk2_tbl[i]);
+                }
+            }
+            // 1翻
+            for (int i = 0; i < yaku_wk1_tbl.Length; i++)
+            {
+                if ((yaku_wk1 & (1 << i)) != 0)
+                {
+                    names.Add(yaku_wk1_tbl[i]);
+                }
+            }
+            // 役牌
+            if (yakuh_wk > 0)
+            {
+                names.Add(yaku_wk_a_tbl[0] + " " + yakuh_wk); // "役牌 2" など
+            }
+            // ドラ
+            if (dora_wk > 0)
+            {
+                names.Add(yaku_wk_a_tbl[1] + " " + dora_wk); // "ドラ 3" など
+            }
+
+            return names;
+        }
     }
 }
