@@ -977,6 +977,7 @@ MonoBehaviour:
   winButton: {fileID: 632275972}
   sortButton: {fileID: 534300768}
   resultText: {fileID: 1828744525}
+  discardButtonText: {fileID: 0}
   tileSpacing: 1.2
   displayDelay: 0.5
   selectionOffset: 0.5
@@ -1268,10 +1269,10 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\u3042\u3042\u3042\u3042\u3042\u3044aa\u8D77\u304D\u305F"
+  m_text: "\u8D77\u304D\u305F\u304B\uFF1F\u3084\u3063\u305F"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2a88631a12779374c8f4ae820be17131, type: 2}
-  m_sharedMaterial: {fileID: -7849435086835772898, guid: 2a88631a12779374c8f4ae820be17131, type: 2}
+  m_sharedMaterial: {fileID: 343209239881284899, guid: 2a88631a12779374c8f4ae820be17131, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []

@@ -11,40 +11,48 @@ public class MahjongDisplayManager : MonoBehaviour
     // ゲームの状態を管理するEnum
     private enum GameState
     {
-        HandOut,     // 1. 配牌モード (アニメーション中)
-        Discard,     // 2. 捨て牌選択モード
-        Replenish,   // 3. 牌の補充モード
-        WinCheck,    // 4. 上がり判定モード
-        Result,      // 5. 結果表示モード
-        NextTurn,    // 6. 次のターン準備 (タッチ待ち)
-        GameOver     // 7. ゲームオーバー（流局）状態を追加
+        HandOut,          // 1. 配牌
+        DrawCandidates,   // 2. 入れ替え候補の牌を山から引く
+        SelectCandidates, // 3. 候補の牌（5枚）を選択中
+        SelectHandTiles,  // 4. 手牌から捨てる牌を選択中
+        ProcessingSwap,   // 5. 牌の入れ替えと破棄を実行中
+        WinCheck,         // 6. 上がり判定
+        Result,           // 7. 結果表示
+        NextTurn,         // 8. 次のターン準備 (タッチ待ち)
+        GameOver          // 9. ゲームオーバー（流局）
     }
 
     private GameState currentState = GameState.HandOut;
 
     // --- UI関連 (Inspectorで設定) ---
-    public Button discardButton;
+    public Button discardButton; // 1つのボタンを「決定」「交換」など多目的に使います
     public Button winButton;
     public Button sortButton;
     public TextMeshProUGUI resultText;
+    public TextMeshProUGUI discardButtonText; // 捨て牌ボタンのテキスト
 
     // --- 牌のデータと設定 ---
     public float tileSpacing = 1.3f;
     public float displayDelay = 0.5f;
     public float selectionOffset = 0.7f;
     public float tileScale = 0.5f;
+    private Vector3 candidateTilePos = new Vector3(0, 2.5f, 0); // 候補牌のY座標
 
-    // allMahjongTiles は34種類の「マスターリスト」として使用
-    private List<Sprite> allMahjongTiles;
-    // gameDeck は136枚の「実際の山」として使用
-    private List<Sprite> gameDeck = new List<Sprite>();
-    private List<GameObject> playerHand = new List<GameObject>();
-    private List<GameObject> selectedTiles = new List<GameObject>();
+    // --- 牌リスト ---
+    private List<Sprite> allMahjongTiles; // 34種のマスターリスト
+    private List<Sprite> gameDeck = new List<Sprite>(); // 136枚の山
+    private List<GameObject> playerHand = new List<GameObject>(); // 14枚の手牌
+    private List<GameObject> candidateTiles = new List<GameObject>(); // 5枚の候補牌
+
+    // --- 選択中リスト ---
+    private List<GameObject> selectedTiles = new List<GameObject>(); // 現在のステートで選択中の牌
+    private List<GameObject> selectedCandidateTiles = new List<GameObject>(); // Phase1で選択が確定した候補牌
+
     private MahjongScoring mahjongScoring;
 
     void Start()
     {
-        // 初期設定とUIの非表示
+        // 初期設定
         LoadMahjongTiles(); // 34種のマスターをロード
         BuildDeck();        // 136枚の山を構築
         SetUIActive(false);
@@ -62,19 +70,29 @@ public class MahjongDisplayManager : MonoBehaviour
 
     void Update()
     {
-        if (currentState == GameState.Discard)
+        // 状態に応じた牌選択の処理
+        if (currentState == GameState.SelectCandidates)
         {
-            HandleTileSelection();
+            // 候補牌（上段）の選択
+            HandleTileSelection(candidateTiles, 5);
+        }
+        else if (currentState == GameState.SelectHandTiles)
+        {
+            // 手牌（下段）の選択
+            // 候補で選んだ数しか選択できないようにする
+            HandleTileSelection(playerHand, selectedCandidateTiles.Count);
         }
 
         // 画面タッチでリセット
-        // GameOver 状態でもリセットできるように変更
         if ((currentState == GameState.NextTurn || currentState == GameState.GameOver) && Input.GetMouseButtonDown(0))
         {
             ResetAndRestart();
         }
     }
 
+    /// <summary>
+    /// メインのUIボタンの表示/非表示を制御
+    /// </summary>
     private void SetUIActive(bool active)
     {
         discardButton.gameObject.SetActive(active);
@@ -90,9 +108,6 @@ public class MahjongDisplayManager : MonoBehaviour
         currentState = GameState.HandOut;
         resultText.gameObject.SetActive(false);
 
-        // ★変更: allMahjongTiles ではなく gameDeck から引く
-        // (BuildDeck() でシャッフル済み)
-
         int totalTiles = 14;
         float startX = -(totalTiles - 1) * tileSpacing / 2f;
         int displayedCount = 0;
@@ -103,14 +118,9 @@ public class MahjongDisplayManager : MonoBehaviour
             for (int i = 0; i < 4; i++)
             {
                 if (displayedCount >= totalTiles) break;
-
-                // ★変更: DrawTile() を使用
                 Sprite tileSprite = DrawTile();
-                if (tileSprite == null) yield break; // 山が尽きた場合
-
-                GameObject tileObject = CreateTileGameObject(tileSprite,
-                    new Vector3(startX + displayedCount * tileSpacing, 0, 0));
-
+                if (tileSprite == null) yield break;
+                GameObject tileObject = CreateTileGameObject(tileSprite, new Vector3(startX + displayedCount * tileSpacing, 0, 0));
                 playerHand.Add(tileObject);
                 displayedCount++;
             }
@@ -121,31 +131,31 @@ public class MahjongDisplayManager : MonoBehaviour
         for (int i = 0; i < 2; i++)
         {
             if (displayedCount >= totalTiles) break;
-
-            // ★変更: DrawTile() を使用
             Sprite tileSprite = DrawTile();
-            if (tileSprite == null) yield break; // 山が尽きた場合
-
-            GameObject tileObject = CreateTileGameObject(tileSprite,
-                new Vector3(startX + displayedCount * tileSpacing, 0, 0));
-
+            if (tileSprite == null) yield break;
+            GameObject tileObject = CreateTileGameObject(tileSprite, new Vector3(startX + displayedCount * tileSpacing, 0, 0));
             playerHand.Add(tileObject);
             displayedCount++;
         }
 
-        // 配牌完了後、ソートして捨て牌選択モードへ
         yield return new WaitForSeconds(displayDelay);
-        SortAndRedisplayHand();
-        currentState = GameState.Discard;
-        SetUIActive(true);
+        SortAndRedisplayHand(); // 配牌ソート
+
+        // ★変更: 捨て牌モードではなく、候補牌の抽選に移行
+        StartCoroutine(DrawCandidateTiles());
     }
 
     // --------------------------------------------------------------------------------
-    // 2. 捨て牌選択モード
+    // 2. 牌選択モード (汎用)
     // --------------------------------------------------------------------------------
-    private void HandleTileSelection()
+
+    /// <summary>
+    /// 牌選択の共通ロジック
+    /// </summary>
+    /// <param name="targetList">選択対象のリスト (手牌 or 候補牌)</param>
+    /// <param name="selectionLimit">選択できる最大数</param>
+    private void HandleTileSelection(List<GameObject> targetList, int selectionLimit)
     {
-        // ... (変更なし) ...
         if (Input.GetMouseButtonDown(0))
         {
             Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
@@ -155,47 +165,236 @@ public class MahjongDisplayManager : MonoBehaviour
             {
                 GameObject clickedTile = hit.collider.gameObject;
 
-                if (playerHand.Contains(clickedTile))
+                // 選択対象のリスト(targetList)に含まれている牌かチェック
+                if (targetList.Contains(clickedTile))
                 {
                     if (selectedTiles.Contains(clickedTile))
                     {
+                        // 選択解除
                         clickedTile.transform.position -= new Vector3(0, selectionOffset, 0);
                         selectedTiles.Remove(clickedTile);
                     }
-                    else
+                    // 選択上限(selectionLimit)に達していないかチェック
+                    else if (selectedTiles.Count < selectionLimit)
                     {
+                        // 新規選択
                         clickedTile.transform.position += new Vector3(0, selectionOffset, 0);
                         selectedTiles.Add(clickedTile);
                     }
+                    // else: 上限に達しているので選択不可
                 }
             }
         }
     }
 
+    // --------------------------------------------------------------------------------
+    // 3. 捨て牌/交換ボタン押下処理 (ステートマシン)
+    // --------------------------------------------------------------------------------
     private void OnDiscardButtonClick()
     {
-        // ... (変更なし) ...
-        if (selectedTiles.Count > 0)
+        switch (currentState)
         {
-            foreach (GameObject tileToDiscard in selectedTiles)
-            {
-                tileToDiscard.transform.position = new Vector3(tileToDiscard.transform.position.x, 3, 0);
-                playerHand.Remove(tileToDiscard);
-                Destroy(tileToDiscard, 1.0f);
-            }
-            selectedTiles.Clear();
-            SetUIActive(false);
-            StartCoroutine(RearrangeAndReplenish());
+            case GameState.SelectCandidates:
+                // Phase 1: 候補牌の選択を決定
+                ProcessCandidateSelection();
+                break;
+
+            case GameState.SelectHandTiles:
+                // Phase 2: 手牌の選択を決定 (交換実行)
+                ProcessHandTileSelection();
+                break;
         }
     }
+
+    /// <summary>
+    /// Phase 1: 候補牌の選択を決定したときの処理
+    /// </summary>
+    private void ProcessCandidateSelection()
+    {
+        // 選択した牌を `selectedCandidateTiles` リストに退避
+        selectedCandidateTiles.Clear();
+        foreach (var tile in selectedTiles)
+        {
+            selectedCandidateTiles.Add(tile);
+            // 選択解除 (Y座標を元に戻す)
+            tile.transform.position -= new Vector3(0, selectionOffset, 0);
+        }
+        selectedTiles.Clear(); // メインの選択リストをクリア
+
+        if (selectedCandidateTiles.Count == 0)
+        {
+            // 0枚選択時: 候補牌を全て捨てて、次の5枚を引く
+            StartCoroutine(ProcessDiscardAndSwap());
+        }
+        else
+        {
+            // 1〜5枚選択時: 手牌選択フェーズに移行
+            currentState = GameState.SelectHandTiles;
+
+            // UI更新
+            resultText.text = $"手牌から {selectedCandidateTiles.Count} 枚選択してください";
+            resultText.gameObject.SetActive(true);
+            discardButtonText.text = "交換";
+            sortButton.gameObject.SetActive(false); // 手牌選択中はソート禁止
+            winButton.gameObject.SetActive(false);  // 手牌選択中は和了禁止
+        }
+    }
+
+    /// <summary>
+    /// Phase 2: 手牌の選択を決定したときの処理 (交換実行)
+    /// </summary>
+    private void ProcessHandTileSelection()
+    {
+        // 候補牌の選択数と手牌の選択数が一致するかチェック
+        if (selectedTiles.Count != selectedCandidateTiles.Count)
+        {
+            // 枚数が違う場合、エラーメッセージ表示
+            StartCoroutine(ShowTemporaryMessage("選択枚数が違います"));
+            return;
+        }
+
+        // 枚数が一致した場合、入れ替え処理を開始
+        resultText.gameObject.SetActive(false);
+        StartCoroutine(ProcessDiscardAndSwap());
+    }
+
+    // --------------------------------------------------------------------------------
+    // 4. 牌の描画・交換・破棄 (コルーチン)
+    // --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// ★新規: 5枚の候補牌を山から引いて表示する
+    /// </summary>
+    private IEnumerator DrawCandidateTiles()
+    {
+        currentState = GameState.DrawCandidates;
+        SetUIActive(false); // ボタンを一時的に無効化
+        resultText.gameObject.SetActive(false);
+
+        // 1. 古い候補牌を破棄 (あれば)
+        foreach (var tile in candidateTiles) { Destroy(tile); }
+        candidateTiles.Clear();
+        selectedTiles.Clear();
+
+        // 2. 山から5枚引く
+        int totalCandidates = 5;
+        float startX = -(totalCandidates - 1) * tileSpacing / 2f;
+
+        for (int i = 0; i < totalCandidates; i++)
+        {
+            Sprite tileSprite = DrawTile();
+            if (tileSprite == null)
+            {
+                // 山が尽きた
+                if (candidateTiles.Count == 0)
+                {
+                    // 1枚も引けなかった -> 流局
+                    yield break; // DrawTile() が GameOver 処理を開始済み
+                }
+                else
+                {
+                    // 5枚引く前に山が尽きた (これが最後の補充)
+                    break;
+                }
+            }
+
+            // 候補牌を指定座標（手牌の上）に生成
+            Vector3 pos = new Vector3(startX + i * tileSpacing, candidateTilePos.y, 0);
+            GameObject tileObj = CreateTileGameObject(tileSprite, pos);
+            candidateTiles.Add(tileObj);
+            yield return new WaitForSeconds(0.1f); // 1枚ずつ表示
+        }
+
+        // 3. 候補選択ステートに移行
+        currentState = GameState.SelectCandidates;
+        SetUIActive(true); // UIを有効化
+        discardButtonText.text = "決定";
+        resultText.text = "入れ替える牌を選択してください (0枚でも可)";
+        resultText.gameObject.SetActive(true);
+    }
+
+    /// <summary>
+    /// ★新規: 牌の入れ替えと破棄を実行する
+    /// </summary>
+    private IEnumerator ProcessDiscardAndSwap()
+    {
+        currentState = GameState.ProcessingSwap;
+        SetUIActive(false);
+        resultText.gameObject.SetActive(false);
+
+        // --- ケース1: 0枚選択時 (候補牌を全て破棄) ---
+        if (selectedCandidateTiles.Count == 0)
+        {
+            foreach (var tile in candidateTiles)
+            {
+                // (任意) 破棄アニメーション
+                Destroy(tile, 0.5f);
+            }
+            candidateTiles.Clear();
+            yield return new WaitForSeconds(0.6f); // 破棄アニメーション待ち
+
+            // 次の候補牌を引く
+            StartCoroutine(DrawCandidateTiles());
+            yield break; // このコルーチンは終了
+        }
+
+        // --- ケース2: 1〜5枚選択時 (手牌と交換) ---
+
+        // 1. 選択した「手牌」を破棄
+        // (この時点で selectedTiles には手牌が入っている)
+        foreach (var tile in selectedTiles)
+        {
+            playerHand.Remove(tile);
+            // (任意) 破棄アニメーション
+            tile.transform.position += new Vector3(0, 3, 0); // 上に飛んでいく
+            Destroy(tile, 0.5f);
+        }
+
+        // 2. 選択されなかった「候補牌」を破棄
+        foreach (var tile in candidateTiles)
+        {
+            if (!selectedCandidateTiles.Contains(tile))
+            {
+                // (任意) 破棄アニメーション
+                Destroy(tile, 0.5f);
+            }
+        }
+
+        // 3. 選択した「候補牌」を手牌リストに追加
+        // (この時点で selectedCandidateTiles には候補牌が入っている)
+        foreach (var tile in selectedCandidateTiles)
+        {
+            playerHand.Add(tile);
+        }
+
+        // 4. 一時リストを全てクリア
+        selectedTiles.Clear();
+        selectedCandidateTiles.Clear();
+        candidateTiles.Clear();
+
+        yield return new WaitForSeconds(0.6f); // 破棄アニメーション待ち
+
+        // 5. 手牌をソートして再描画
+        // (SortAndRedisplayHandは、playerHand内のGameObjectを一旦破棄し、
+        // y=0 の位置にソートして再生成する)
+        SortAndRedisplayHand();
+
+        yield return new WaitForSeconds(0.5f); // 牌譜確認時間
+
+        // 6. 次の候補牌を引く
+        StartCoroutine(DrawCandidateTiles());
+    }
+
 
     // --------------------------------------------------------------------------------
     // 5. ソートボタン処理
     // --------------------------------------------------------------------------------
     private void OnSortButtonClick()
     {
-        // ... (変更なし) ...
-        if (currentState != GameState.Discard) return;
+        // 候補選択中のみソート可能
+        if (currentState != GameState.SelectCandidates) return;
+
+        // 選択中の手牌があれば解除
         if (selectedTiles.Count > 0)
         {
             foreach (var tile in selectedTiles)
@@ -204,101 +403,59 @@ public class MahjongDisplayManager : MonoBehaviour
             }
             selectedTiles.Clear();
         }
+
+        // 手牌（下段）のソートを実行
         SortAndRedisplayHand();
     }
 
-    // --------------------------------------------------------------------------------
     // 6. ソート実行ロジック
-    // --------------------------------------------------------------------------------
     private void SortAndRedisplayHand()
     {
-        // ... (変更なし) ...
+        // (変更なし)
         Array.Clear(tmp_wk, 0, tmp_wk.Length);
         CopyHandToTmp();
         Array.Sort(tmp_wk, 0, playerHand.Count);
         CopyTmpToHand();
     }
 
-
-    private IEnumerator RearrangeAndReplenish()
-    {
-        // ... (変更なし) ...
-        yield return StartCoroutine(RearrangeHand());
-        yield return StartCoroutine(ReplenishTile());
-
-        // ★注意: ReplenishTile でゲームオーバーになった場合、
-        // この後の処理は実行されない（yield break するため）
-        if (currentState == GameState.GameOver) yield break;
-
-        yield return StartCoroutine(SortHand());
-        currentState = GameState.Discard;
-        SetUIActive(true);
-    }
-
-    private IEnumerator RearrangeHand()
-    {
-        // ... (変更なし) ...
-        yield return new WaitForSeconds(0.1f);
-        float startX = -(playerHand.Count - 1) * tileSpacing / 2f;
-        for (int i = 0; i < playerHand.Count; i++)
-        {
-            playerHand[i].transform.position = new Vector3(startX + i * tileSpacing, 0, 0);
-        }
-    }
-
-    // --------------------------------------------------------------------------------
-    // 3. 牌の補充モード
-    // --------------------------------------------------------------------------------
-    private IEnumerator ReplenishTile()
-    {
-        currentState = GameState.Replenish;
-        int tilesNeeded = 14 - playerHand.Count;
-
-        for (int i = 0; i < tilesNeeded; i++)
-        {
-            // ★変更: allMahjongTiles からランダムに選ぶ代わりに、DrawTile() を使う
-            Sprite newTileSprite = DrawTile();
-
-            // ★追加: 山が尽きたらコルーチンを即時終了
-            if (newTileSprite == null)
-            {
-                yield break;
-            }
-
-            // 最後に引いた牌を右端に表示 (仮の位置)
-            float posX = (-(playerHand.Count - 1) * tileSpacing / 2f) + playerHand.Count * tileSpacing + 0.5f;
-
-            GameObject newTileObject = CreateTileGameObject(newTileSprite, new Vector3(posX, 0, 0));
-            playerHand.Add(newTileObject);
-
-            yield return new WaitForSeconds(0.5f);
-        }
-    }
+    // (旧) RearrangeAndReplenish と ReplenishTile は不要になったので削除
 
     private IEnumerator SortHand()
     {
-        // ... (変更なし) ...
         SortAndRedisplayHand();
         yield return null;
     }
 
     // --------------------------------------------------------------------------------
-    // 4 & 5. 上がり判定モードと結果表示
+    // 7. 上がり判定モードと結果表示
     // --------------------------------------------------------------------------------
     private void OnWinButtonClick()
     {
-        // ... (変更なし) ...
-        if (selectedTiles.Count == 0 && currentState == GameState.Discard)
+        // 候補牌の選択中のみ「和了」ボタンを有効にする
+        if (currentState != GameState.SelectCandidates) return;
+
+        // 何か選択していたら解除
+        if (selectedTiles.Count > 0)
         {
-            currentState = GameState.WinCheck;
-            SetUIActive(false);
-            StartCoroutine(CheckWinCondition());
+            foreach (var tile in selectedTiles)
+            {
+                tile.transform.position -= new Vector3(0, selectionOffset, 0);
+            }
+            selectedTiles.Clear();
         }
+
+        currentState = GameState.WinCheck;
+        SetUIActive(false);
+        resultText.gameObject.SetActive(false);
+        // 候補牌も非表示にする
+        foreach (var tile in candidateTiles) { tile.SetActive(false); }
+
+        StartCoroutine(CheckWinCondition());
     }
 
     private IEnumerator CheckWinCondition()
     {
-        // ... (変更なし) ...
+        // (変更なし)
         yield return new WaitForSeconds(0.5f);
         CopyHandToTmp();
         int[] handToCheck = new int[14];
@@ -325,19 +482,19 @@ public class MahjongDisplayManager : MonoBehaviour
     }
 
     // --------------------------------------------------------------------------------
-    // 6. 次のターン
+    // 8. 次のターン
     // --------------------------------------------------------------------------------
     private void ResetAndRestart()
     {
         // 既存の牌をすべて削除
-        foreach (GameObject tile in playerHand)
-        {
-            Destroy(tile);
-        }
+        foreach (GameObject tile in playerHand) { Destroy(tile); }
+        foreach (GameObject tile in candidateTiles) { Destroy(tile); }
         playerHand.Clear();
+        candidateTiles.Clear();
         selectedTiles.Clear();
+        selectedCandidateTiles.Clear();
 
-        // ★追加: 山を再構築
+        // 山を再構築
         BuildDeck();
 
         // ゲームを最初から再開
@@ -345,11 +502,11 @@ public class MahjongDisplayManager : MonoBehaviour
     }
 
     // --------------------------------------------------------------------------------
-    // ユーティリティ関数 (★新規関数追加)
+    // 9. ユーティリティ関数
     // --------------------------------------------------------------------------------
 
     /// <summary>
-    /// ★新規追加: 136枚のゲームデッキを構築し、シャッフルする
+    /// 136枚のゲームデッキを構築し、シャッフルする
     /// </summary>
     private void BuildDeck()
     {
@@ -359,8 +516,6 @@ public class MahjongDisplayManager : MonoBehaviour
             Debug.LogError("マスター牌リスト(allMahjongTiles)が空です。LoadMahjongTilesを先に実行してください。");
             return;
         }
-
-        // 34種のマスターリストから、各種4枚ずつデッキに追加
         foreach (Sprite tileSprite in allMahjongTiles)
         {
             for (int i = 0; i < 4; i++)
@@ -368,49 +523,64 @@ public class MahjongDisplayManager : MonoBehaviour
                 gameDeck.Add(tileSprite);
             }
         }
-
-        // デッキをシャッフル
         gameDeck.Shuffle();
     }
 
     /// <summary>
-    /// ★新規追加: デッキ（山）から牌を1枚引く
+    /// デッキ（山）から牌を1枚引く
     /// </summary>
-    /// <returns>スプライト。山が尽きたら null</returns>
     private Sprite DrawTile()
     {
-        // 136枚 - 14枚（王牌/リンシャン）= 122枚がツモれる
-        // 山が14枚以下になったら「流局」とする
+        // 王牌(14枚)を残す
         if (gameDeck.Count <= 14)
         {
             StartCoroutine(ShowGameOver("（流局）"));
             return null;
         }
 
-        // デッキの先頭から1枚引く
         Sprite tile = gameDeck[0];
         gameDeck.RemoveAt(0);
         return tile;
     }
 
     /// <summary>
-    /// ★新規追加: ゲームオーバー（流局）処理
+    /// ゲームオーバー（流局）処理
     /// </summary>
     private IEnumerator ShowGameOver(string message)
     {
-        // 既にゲームオーバーなら何もしない
         if (currentState == GameState.GameOver) yield break;
-
         currentState = GameState.GameOver;
         resultText.text = "ゲームオーバー\n" + message;
         resultText.gameObject.SetActive(true);
-        SetUIActive(false); // 全ボタンを非表示
+        SetUIActive(false);
+        // 候補牌も消す
+        foreach (var tile in candidateTiles) { Destroy(tile); }
+        candidateTiles.Clear();
     }
 
+    /// <summary>
+    /// 一時的なメッセージを表示
+    /// </summary>
+    private IEnumerator ShowTemporaryMessage(string message)
+    {
+        resultText.text = message;
+        resultText.gameObject.SetActive(true);
+        yield return new WaitForSeconds(1.5f);
+
+        // 現在のステートがまだ手牌選択中なら、ガイダンスを再表示
+        if (currentState == GameState.SelectHandTiles)
+        {
+            resultText.text = $"手牌から {selectedCandidateTiles.Count} 枚選択してください";
+        }
+        else
+        {
+            resultText.gameObject.SetActive(false);
+        }
+    }
 
     private GameObject CreateTileGameObject(Sprite sprite, Vector3 position)
     {
-        // ... (変更なし) ...
+        // (変更なし)
         GameObject tileObject = new GameObject(sprite.name);
         tileObject.transform.position = position;
         tileObject.transform.localScale = new Vector3(tileScale, tileScale, 1);
@@ -427,25 +597,20 @@ public class MahjongDisplayManager : MonoBehaviour
 
     private void LoadMahjongTiles()
     {
-        // ... (変更なし) ...
-        // この関数は「34種類のマスターリスト」を作成する役割のみになる
+        // (変更なし)
         allMahjongTiles = new List<Sprite>();
-
         for (int i = 1; i <= 9; i++)
         {
             allMahjongTiles.Add(Resources.Load<Sprite>($"MahjongTiles/mjpai_m_{i}"));
             allMahjongTiles.Add(Resources.Load<Sprite>($"MahjongTiles/mjpai_p_{i}"));
             allMahjongTiles.Add(Resources.Load<Sprite>($"MahjongTiles/mjpai_s_{i}"));
         }
-        // 字牌
         allMahjongTiles.Add(Resources.Load<Sprite>("MahjongTiles/mjpai_j_t")); allMahjongTiles.Add(Resources.Load<Sprite>("MahjongTiles/mjpai_j_n"));
         allMahjongTiles.Add(Resources.Load<Sprite>("MahjongTiles/mjpai_j_s")); allMahjongTiles.Add(Resources.Load<Sprite>("MahjongTiles/mjpai_j_p"));
         allMahjongTiles.Add(Resources.Load<Sprite>("MahjongTiles/mjpai_j_w")); allMahjongTiles.Add(Resources.Load<Sprite>("MahjongTiles/mjpai_j_g"));
         allMahjongTiles.Add(Resources.Load<Sprite>("MahjongTiles/mjpai_j_r"));
-
         allMahjongTiles.RemoveAll(item => item == null);
-
-        if (allMahjongTiles.Count != 34) // 34種類あるか確認
+        if (allMahjongTiles.Count != 34)
         {
             Debug.LogError($"麻雀牌のスプライトの読み込みに失敗しました。34種類必要ですが、{allMahjongTiles.Count}種類しか読み込めませんでした。");
         }
@@ -455,7 +620,7 @@ public class MahjongDisplayManager : MonoBehaviour
 
     private void CopyHandToTmp()
     {
-        // ... (変更なし) ...
+        // (変更なし)
         Array.Clear(tmp_wk, 0, tmp_wk.Length);
         for (int i = 0; i < playerHand.Count && i < tmp_wk.Length; i++)
         {
@@ -497,7 +662,7 @@ public class MahjongDisplayManager : MonoBehaviour
 
     private void CopyTmpToHand()
     {
-        // ... (変更なし) ...
+        // (変更なし)
         foreach (GameObject tile in playerHand)
             Destroy(tile);
         playerHand.Clear();
@@ -558,7 +723,7 @@ public class MahjongDisplayManager : MonoBehaviour
 // Listの拡張メソッド
 public static class ListExtension
 {
-    // ... (変更なし) ...
+    // (変更なし)
     public static void Shuffle<T>(this IList<T> list)
     {
         System.Random rng = new System.Random();
