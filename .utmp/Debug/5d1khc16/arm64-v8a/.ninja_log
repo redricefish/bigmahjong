@@ -1,0 +1,12 @@
+# ninja log v5
+88	646	7838393048846009	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	c0878f86303000e0
+649	881	7838393051079938	C:/AllProjects/unityProj/BigMahjong/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/Debug/5d1khc16/obj/arm64-v8a/libswappywrapper.so	e1b1813df45f3b4c
+53	1941	7838393061753170	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	cd2127940c81ff4d
+0	1954	7838393061813582	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	dfe66b26ce89cfd8
+43	1957	7838393061911382	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	caf24e33969339f5
+65	1984	7838393062216924	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	827423c95dc97a43
+11	1998	7838393062373467	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	f73a35bb29aee618
+33	2189	7838393064226962	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	5ec6f5218159ddfc
+21	2252	7838393064853967	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	10cdd80141ebcfc0
+76	2295	7838393065293205	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	d2af24c6c93e8d38
+2295	2461	7838393066942219	C:/AllProjects/unityProj/BigMahjong/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/Debug/5d1khc16/obj/arm64-v8a/libgame.so	9176ebe6e7310d7d
