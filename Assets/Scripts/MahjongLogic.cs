@@ -126,6 +126,7 @@ namespace MahjongLogic
         private int kaze0, kaze1; // Wind tiles
         private int[] tmp_wk = new int[14];
         private int[] tmp_wk_v = new int[14];
+        private int lastCalculatedScore = 0; // ★ この行を追加
         private int[] mf_d = new int[mfd_end];
         private int agr_flg;
         private int tmp_ply_flg;
@@ -244,7 +245,7 @@ namespace MahjongLogic
             }
         }
 
-// C++ より移植
+        // C++ より移植
         private void set_total_han()
         {
             int i;
@@ -393,7 +394,7 @@ namespace MahjongLogic
         private void agrpt_yk()
         {
             // C++の agrpt_yk からツモ判定を移植
-            
+
             // (kan_flg, tyan_flg, UkoRiip, StReach などの変数が
             // MahjongLogic.cs に移植されていないため、
             // リンシャン、一発、ハイテイなどのロジックは保留します)
@@ -2023,7 +2024,13 @@ namespace MahjongLogic
 
             return names;
         }
-        
+        /// <summary>
+        /// 最後に GetScoreSummary() で計算した点数を整数で返す
+        /// </summary>
+        public int GetScore()
+        {
+            return lastCalculatedScore;
+        }
         /// <summary>
         /// 符、翻、点数を計算して文字列として返す
         /// C++の get_score をベースに
@@ -2032,7 +2039,7 @@ namespace MahjongLogic
         public string GetScoreSummary()
         {
             // C++ 親(Oya)かどうか
-            bool isOya = (kaze0 == kaze1); 
+            bool isOya = (kaze0 == kaze1);
 
             int[] cul_score = new int[4]; //
             string yakuName = "";
@@ -2062,7 +2069,7 @@ namespace MahjongLogic
             {
                 // 符を丸める
                 int fuc_index = (fu_for_calc + 9) / 10; // 20符->2, 30符->3
-                
+
                 // C++ (fu_check) / (get_score)
                 // 平和ツモ(20符)以外は30符に切り上げ
                 if (fuc_index < 3 && fu_for_calc > 20) fuc_index = 3; // 22符 -> 30符
@@ -2076,12 +2083,12 @@ namespace MahjongLogic
                 else if (han_for_calc >= 11 && han_for_calc <= 12) { yakuName = "三倍満 "; han_for_calc = 11; }
                 else if (han_for_calc == 4 && fuc_index >= 4) { yakuName = "満貫 "; han_for_calc = 5; } // 4翻40符
                 else if (han_for_calc == 3 && fuc_index >= 7) { yakuName = "満貫 "; han_for_calc = 5; } // 3翻70符
-                
+
                 int[] sco_tbl;
                 int ix;
-                
+
                 // 5翻以上
-                if(han_for_calc >= 5)
+                if (han_for_calc >= 5)
                 {
                     sco_tbl = isOya ? score_tbl_2 : score_tbl_0; //
                     ix = (han_for_calc - 5) * 4;
@@ -2093,13 +2100,13 @@ namespace MahjongLogic
                     if (fuc_index > 8) fuc_index = 8; // 80符まで
                     ix = (fuc_index - 2) * 4 + (han_for_calc * 4 * 7);
                 }
-                
+
                 for (int i = 0; i < 4; ++i) cul_score[i] = sco_tbl[ix + i] * 100;
             }
-            
+
             // C++ ロン or ツモ
             int finalScore = (tmp_ply_flg & RonNaki) != 0 ? cul_score[0] : cul_score[1];
-            
+            lastCalculatedScore = finalScore;
             if (ykmn_cnt > 0)
             {
                 return $"{yakuName}{finalScore}点";
@@ -2114,60 +2121,6 @@ namespace MahjongLogic
                 return $"{total_han}翻 {display_fu}符 {yakuName}{finalScore}点";
             }
         }
-        /// <summary>
-        /// 判定結果（役名）を取得するヘルパー
-        /// </summary>
-      /*  public List<string> GetYakuNames()
-        {
-            List<string> names = new List<string>();
 
-            // 役満
-            for (int i = 0; i < yaku_wk0_tbl.Length; i++)
-            {
-                if ((yaku_wk0 & (1 << i)) != 0)
-                {
-                    names.Add(yaku_wk0_tbl[i]);
-                }
-            }
-
-            if (names.Count > 0) return names; // 役満の場合は他の役を表示しない
-
-            // 3-6翻
-            for (int i = 0; i < yaku_wk3_tbl.Length; i++)
-            {
-                if ((yaku_wk3 & (1 << i)) != 0)
-                {
-                    names.Add(yaku_wk3_tbl[i]);
-                }
-            }
-            // 2翻
-            for (int i = 0; i < yaku_wk2_tbl.Length; i++)
-            {
-                if ((yaku_wk2 & (1 << i)) != 0)
-                {
-                    names.Add(yaku_wk2_tbl[i]);
-                }
-            }
-            // 1翻
-            for (int i = 0; i < yaku_wk1_tbl.Length; i++)
-            {
-                if ((yaku_wk1 & (1 << i)) != 0)
-                {
-                    names.Add(yaku_wk1_tbl[i]);
-                }
-            }
-            // 役牌
-            if (yakuh_wk > 0)
-            {
-                names.Add(yaku_wk_a_tbl[0] + " " + yakuh_wk); // "役牌 2" など
-            }
-            // ドラ
-            if (dora_wk > 0)
-            {
-                names.Add(yaku_wk_a_tbl[1] + " " + dora_wk); // "ドラ 3" など
-            }
-
-            return names;
-        }*/
     }
 }
