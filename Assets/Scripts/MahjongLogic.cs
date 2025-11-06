@@ -121,6 +121,8 @@ namespace MahjongLogic
         // Game state variables that were global in the C++ code
         private int yaku_wk0, yaku_wk1, yaku_wk2, yaku_wk3;
         private int dora_wk, fu_wk, total_han, yakuh_wk;
+        private int ykmn_cnt = 0; // ★ ADD THIS
+        private int ck_no = 0;    // ★ ADD THIS
         private int kaze0, kaze1; // Wind tiles
         private int[] tmp_wk = new int[14];
         private int[] tmp_wk_v = new int[14];
@@ -190,11 +192,15 @@ namespace MahjongLogic
             }
 
             fu_check();
-            if (total_han == 0) return false;
+            // ★ 修正: set_total_han を fu_check の後に移動
+            set_total_han();
+            if (total_han == 0 && ykmn_cnt == 0) return false;
 
             if (yaku_wk0 == 0)
             {
                 dora_check();
+                // ★ 修正: ドラを含めて再度翻計算
+                set_total_han();
             }
 
             return true;
@@ -238,7 +244,59 @@ namespace MahjongLogic
             }
         }
 
+// C++ より移植
+        private void set_total_han()
+        {
+            int i;
+            int[] sco_tbl;
+            ykmn_cnt = total_han = 0;
 
+            // 役満の翻を計算
+            sco_tbl = yaku_wk0_han_tb1; //
+            for (i = 0; i < yaku_wk0_tbl.Length; ++i)
+            {
+                if ((yaku_wk0 & (1 << i)) != 0)
+                {
+                    total_han += sco_tbl[i];
+                    ykmn_cnt += (sco_tbl[i] & 0x3); // ダブル役満(0x82)などを判定
+                }
+            }
+
+            // 役満の場合、他の翻は足さない (yakuman_chkの後)
+            if (ykmn_cnt > 0) return;
+
+            // 3-6翻
+            sco_tbl = yaku_wk3_han_tb1; //
+            if ((tmp_ply_flg & NomNaki) != 0) sco_tbl = yaku_wk3_han_tb2; // 鳴き
+            for (i = 0; i < yaku_wk3_tbl.Length; ++i)
+            {
+                if ((yaku_wk3 & (1 << i)) != 0)
+                {
+                    total_han += sco_tbl[i];
+                }
+            }
+            // 2翻
+            sco_tbl = yaku_wk2_han_tb1; //
+            if ((tmp_ply_flg & NomNaki) != 0) sco_tbl = yaku_wk2_han_tb2; //
+            for (i = 0; i < yaku_wk2_tbl.Length; ++i)
+            {
+                if ((yaku_wk2 & (1 << i)) != 0)
+                {
+                    total_han += sco_tbl[i];
+                }
+            }
+            // 1翻
+            sco_tbl = yaku_wk1_han_tb1; //
+            for (i = 0; i < yaku_wk1_tbl.Length; ++i)
+            {
+                if ((yaku_wk1 & (1 << i)) != 0)
+                {
+                    total_han += sco_tbl[i];
+                }
+            }
+            total_han += yakuh_wk;
+            total_han += dora_wk;
+        }
         private void yakuman_chk()
         {
             suukan_yk();
@@ -334,8 +392,22 @@ namespace MahjongLogic
 
         private void agrpt_yk()
         {
-            // Simplified version of agari pattern check
+            // C++の agrpt_yk からツモ判定を移植
+            
+            // (kan_flg, tyan_flg, UkoRiip, StReach などの変数が
+            // MahjongLogic.cs に移植されていないため、
+            // リンシャン、一発、ハイテイなどのロジックは保留します)
+
+            //----ツモチェック (RonNaki=2, NomNaki=4)
+            // tmp_ply_flg が 0 (RonNakiでもNomNakiでもない) 場合、ツモとみなす
+            // [CheckWin メソッド (line 1114) で tmp_ply_flg = 0 に設定されています]
+            if ((tmp_ply_flg & (RonNaki | NomNaki)) == 0)
+            {
+                yaku_wk1 |= (int)YakuGroup1.Tumo;
+                total_han++;
+            }
         }
+
 
         private void tuuiso_yk()
         {
@@ -1789,10 +1861,58 @@ namespace MahjongLogic
         /// <param name="playerWind">自風 (1=東, 2=南, 3=西, 4=北)</param>
         /// <param name="roundWind">場風 (1=東, 2=南, 3=西, 4=北)</param>
         /// <returns>役名のリスト (上がっていない場合は空)</returns>
-        public List<string> CheckWin(int[] handTiles, int winningTile, int playerWind, int roundWind)
+        /*   public List<string> CheckWin(int[] handTiles, int winningTile, int playerWind, int roundWind, bool isRon)
+           {
+               // 1. 内部状態をリセット
+               yk_work_clr();
+
+               // 2. 外部から受け取った手牌を内部の tmp_wk にコピー
+               Array.Clear(tmp_wk, 0, tmp_wk.Length);
+               Array.Copy(handTiles, tmp_wk, handTiles.Length);
+
+               // 3. ツモ牌（またはロン牌）を設定
+               tmp_ronh = winningTile;
+
+               // 4. 風を設定 (C++の kaze_pai_set の簡易実装)
+               kaze0 = 0x30 | roundWind; // 場風
+               kaze1 = 0x30 | playerWind; // 自風
+
+               // 5. プレイヤー状態を設定 (仮: 門前ツモとする)
+               // ★注意: リーチ、鳴き、ロン/ツモのフラグは別途 DisplayManager から渡す必要があります
+               tmp_ply_flg = 0; // 門前・ツモ・リーチなし
+
+               // 6. 手牌をソート (ronchk の前提条件)
+               Array.Sort(tmp_wk, 0, 14);
+
+               // tmp_wk_v にもコピー (YakuCheckで使われるため)
+               Array.Clear(tmp_wk_v, 0, tmp_wk_v.Length);
+               Array.Copy(tmp_wk, tmp_wk_v, 14);
+
+               // 7. 役判定の実行
+               // ★★★注意★★★
+               // MahjongLogic.cs の ronchk() が正しく実装されていないと、ここは常に false になります。
+               bool isAgari = ronchk();
+
+               if (isAgari)
+               {
+                   // 役チェックを実行
+                   YakuCheck();
+
+                   // 役名を取得
+                   return GetYakuNames();
+               }
+
+               return new List<string>(); // 上がりではない
+           }*/
+        /// <summary>
+        /// 外部から役判定を要求するメインメソッド
+        /// </summary>
+        // ★ 修正: bool isRon パラメータを追加
+        public List<string> CheckWin(int[] handTiles, int winningTile, int playerWind, int roundWind, bool isRon)
         {
             // 1. 内部状態をリセット
             yk_work_clr();
+            ck_no = 0; // プレイヤー番号を0と仮定
 
             // 2. 外部から受け取った手牌を内部の tmp_wk にコピー
             Array.Clear(tmp_wk, 0, tmp_wk.Length);
@@ -1805,9 +1925,17 @@ namespace MahjongLogic
             kaze0 = 0x30 | roundWind; // 場風
             kaze1 = 0x30 | playerWind; // 自風
 
-            // 5. プレイヤー状態を設定 (仮: 門前ツモとする)
-            // ★注意: リーチ、鳴き、ロン/ツモのフラグは別途 DisplayManager から渡す必要があります
-            tmp_ply_flg = 0; // 門前・ツモ・リーチなし
+            // 5. プレイヤー状態を設定
+            // ★ 修正: isRon に応じて tmp_ply_flg を設定
+            if (isRon)
+            {
+                tmp_ply_flg = RonNaki; // Ron
+            }
+            else
+            {
+                tmp_ply_flg = 0; // Tsumo
+            }
+            // (NomNaki (鳴き) flag は0のまま (門前と仮定))
 
             // 6. 手牌をソート (ronchk の前提条件)
             Array.Sort(tmp_wk, 0, 14);
@@ -1817,26 +1945,179 @@ namespace MahjongLogic
             Array.Copy(tmp_wk, tmp_wk_v, 14);
 
             // 7. 役判定の実行
-            // ★★★注意★★★
-            // MahjongLogic.cs の ronchk() が正しく実装されていないと、ここは常に false になります。
-            bool isAgari = ronchk();
+            bool isAgari = ronchk(); //
 
             if (isAgari)
             {
-                // 役チェックを実行
-                YakuCheck();
-
-                // 役名を取得
-                return GetYakuNames();
+                if (YakuCheck()) // YakuCheck()が翻計算まで行う
+                {
+                    // 役名リストを返す
+                    return GetYakuNames();
+                }
             }
 
             return new List<string>(); // 上がりではない
         }
 
         /// <summary>
-        /// 判定結果（役名）を取得するヘルパー
+        /// 判定結果（役名＋翻数）を取得するヘルパー
         /// </summary>
         public List<string> GetYakuNames()
+        {
+            List<string> names = new List<string>();
+            int[] sco_tbl;
+
+            // 役満
+            sco_tbl = yaku_wk0_han_tb1; //
+            for (int i = 0; i < yaku_wk0_tbl.Length; i++)
+            {
+                if ((yaku_wk0 & (1 << i)) != 0)
+                {
+                    string hanStr = (sco_tbl[i] & 0x3) > 1 ? "ダブル役満" : "役満";
+                    names.Add($"{yaku_wk0_tbl[i]} ({hanStr})");
+                }
+            }
+
+            if (names.Count > 0) return names; // 役満の場合は他の役を表示しない
+
+            // 3-6翻
+            sco_tbl = yaku_wk3_han_tb1; //
+            if ((tmp_ply_flg & NomNaki) != 0) sco_tbl = yaku_wk3_han_tb2; //
+            for (int i = 0; i < yaku_wk3_tbl.Length; i++)
+            {
+                if ((yaku_wk3 & (1 << i)) != 0)
+                {
+                    if (sco_tbl[i] > 0) // 二盃口(鳴き)などは0翻
+                        names.Add($"{yaku_wk3_tbl[i]} ({sco_tbl[i]}翻)");
+                }
+            }
+            // 2翻
+            sco_tbl = yaku_wk2_han_tb1; //
+            if ((tmp_ply_flg & NomNaki) != 0) sco_tbl = yaku_wk2_han_tb2; //
+            for (int i = 0; i < yaku_wk2_tbl.Length; i++)
+            {
+                if ((yaku_wk2 & (1 << i)) != 0)
+                {
+                    names.Add($"{yaku_wk2_tbl[i]} ({sco_tbl[i]}翻)");
+                }
+            }
+            // 1翻
+            sco_tbl = yaku_wk1_han_tb1; //
+            for (int i = 0; i < yaku_wk1_tbl.Length; i++)
+            {
+                if ((yaku_wk1 & (1 << i)) != 0)
+                {
+                    names.Add($"{yaku_wk1_tbl[i]} ({sco_tbl[i]}翻)");
+                }
+            }
+            // 役牌
+            if (yakuh_wk > 0)
+            {
+                names.Add($"{yaku_wk_a_tbl[0]} ({yakuh_wk}翻)"); // "役牌 (2翻)"
+            }
+            // ドラ
+            if (dora_wk > 0)
+            {
+                names.Add($"{yaku_wk_a_tbl[1]} ({dora_wk}翻)"); // "ドラ (3翻)"
+            }
+
+            return names;
+        }
+        
+        /// <summary>
+        /// 符、翻、点数を計算して文字列として返す
+        /// C++の get_score をベースに
+        /// </summary>
+        /// <returns>例: "8翻 30符 満貫 12000点"</returns>
+        public string GetScoreSummary()
+        {
+            // C++ 親(Oya)かどうか
+            bool isOya = (kaze0 == kaze1); 
+
+            int[] cul_score = new int[4]; //
+            string yakuName = "";
+            int han_for_calc = total_han;
+            int fu_for_calc = fu_wk;
+
+            // 役満 or 13翻以上
+            if ((ykmn_cnt != 0) || han_for_calc >= 13)
+            {
+                if (ykmn_cnt == 0) ykmn_cnt = 1; // 数え役満
+                int base_score = isOya ? oya_yakuten : ko_yakuten; //
+                cul_score[0] = base_score * ykmn_cnt; // ロン
+                cul_score[1] = base_score * ykmn_cnt; // ツモ
+                yakuName = (ykmn_cnt > 1) ? $"{ykmn_cnt}倍役満 " : "役満 ";
+            }
+            // 七対子
+            else if ((yaku_wk2 & (int)YakuGroup2.Titoitu) != 0)
+            {
+                fu_for_calc = 25; // 25符固定
+                int[] sco_tbl = isOya ? ti_scr_tbl_oya : ti_scr_tbl_ko; //
+                int ix = (han_for_calc - 2) * 4;
+                if (ix < 0) ix = 0;
+                if (ix >= sco_tbl.Length) ix = sco_tbl.Length - 4; // 4翻まで
+                for (int i = 0; i < 4; ++i) cul_score[i] = sco_tbl[ix + i] * 100;
+            }
+            else // 通常役
+            {
+                // 符を丸める
+                int fuc_index = (fu_for_calc + 9) / 10; // 20符->2, 30符->3
+                
+                // C++ (fu_check) / (get_score)
+                // 平和ツモ(20符)以外は30符に切り上げ
+                if (fuc_index < 3 && fu_for_calc > 20) fuc_index = 3; // 22符 -> 30符
+                if (fu_for_calc == 20 && (yaku_wk1 & (int)YakuGroup1.Pinfu) == 0 && (tmp_ply_flg & RonNaki) == 0) fuc_index = 3; // 平和なしツモ(20符) -> 30符
+                if (fuc_index < 2) fuc_index = 2; // 最小 (平和ロンなど)
+
+                // 満貫切り上げ
+                if (han_for_calc == 5) { yakuName = "満貫 "; }
+                else if (han_for_calc >= 6 && han_for_calc <= 7) { yakuName = "跳満 "; han_for_calc = 6; }
+                else if (han_for_calc >= 8 && han_for_calc <= 10) { yakuName = "倍満 "; han_for_calc = 8; }
+                else if (han_for_calc >= 11 && han_for_calc <= 12) { yakuName = "三倍満 "; han_for_calc = 11; }
+                else if (han_for_calc == 4 && fuc_index >= 4) { yakuName = "満貫 "; han_for_calc = 5; } // 4翻40符
+                else if (han_for_calc == 3 && fuc_index >= 7) { yakuName = "満貫 "; han_for_calc = 5; } // 3翻70符
+                
+                int[] sco_tbl;
+                int ix;
+                
+                // 5翻以上
+                if(han_for_calc >= 5)
+                {
+                    sco_tbl = isOya ? score_tbl_2 : score_tbl_0; //
+                    ix = (han_for_calc - 5) * 4;
+                    if (ix >= sco_tbl.Length) ix = sco_tbl.Length - 4; // 12翻まで
+                }
+                else // 4翻以下
+                {
+                    sco_tbl = isOya ? score_tbl_1 : score_tbl; //
+                    if (fuc_index > 8) fuc_index = 8; // 80符まで
+                    ix = (fuc_index - 2) * 4 + (han_for_calc * 4 * 7);
+                }
+                
+                for (int i = 0; i < 4; ++i) cul_score[i] = sco_tbl[ix + i] * 100;
+            }
+            
+            // C++ ロン or ツモ
+            int finalScore = (tmp_ply_flg & RonNaki) != 0 ? cul_score[0] : cul_score[1];
+            
+            if (ykmn_cnt > 0)
+            {
+                return $"{yakuName}{finalScore}点";
+            }
+            else
+            {
+                // 符を丸める (七対子は25符、他は切り上げ)
+                int display_fu = (fu_wk == 25) ? 25 : ((fu_wk + 9) / 10 * 10);
+                if (display_fu < 30 && fu_wk > 20) display_fu = 30; // 22符 -> 30符
+                if (display_fu == 20 && (yaku_wk1 & (int)YakuGroup1.Pinfu) == 0 && (tmp_ply_flg & RonNaki) == 0) display_fu = 30; // 平和なしツモ
+
+                return $"{total_han}翻 {display_fu}符 {yakuName}{finalScore}点";
+            }
+        }
+        /// <summary>
+        /// 判定結果（役名）を取得するヘルパー
+        /// </summary>
+      /*  public List<string> GetYakuNames()
         {
             List<string> names = new List<string>();
 
@@ -1887,6 +2168,6 @@ namespace MahjongLogic
             }
 
             return names;
-        }
+        }*/
     }
 }

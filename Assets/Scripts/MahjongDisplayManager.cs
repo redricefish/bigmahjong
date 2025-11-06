@@ -405,10 +405,41 @@ public class MahjongDisplayManager : MonoBehaviour
         }
     }
 
-    /// <summary>
+/// <summary>
     /// [A] 和了判定 (14枚の手牌を仮想的に作って判定)
     /// </summary>
     private IEnumerator CheckWinConditionA(int N, int M)
+    {
+        // 1. 仮想の手牌(14枚)を作成
+        List<GameObject> tempHand = new List<GameObject>(playerHand);
+        foreach (var tile in selectedTiles) { tempHand.Remove(tile); } // M枚(N-1枚)除く
+        foreach (var tile in selectedCandidateTiles) { tempHand.Add(tile); } // N枚加える
+        
+        // 2. 判定
+        CopyHandToTmp(tempHand); // 14枚の仮想手牌をtmp_wkに
+        int winningTile = tmp_wk[13]; // ソート後の最後の牌
+        
+        // ★ 修正: isRon: false を渡す
+        List<string> yakuNames = mahjongScoring.CheckWin(tmp_wk, winningTile, 1, 1, false); // false = ツモ和了
+
+        if (yakuNames.Count > 0)
+        {
+            // 和了！ -> 実際の入れ替え処理を実行
+            // ★ 修正: yakuNames を ProcessDiscardAndSwapA に渡す
+            StartCoroutine(ProcessDiscardAndSwapA(N, M, true, yakuNames));
+        }
+        else
+        {
+            // 上がりなし
+            StartCoroutine(ShowTemporaryMessage("上がりなし"));
+            currentState = GameState.SelectRuleAHand; // 手牌選択に戻る
+            SetUIActive(true, true, true); // ボタン再表示
+        }
+        yield return null;
+    }    /// <summary>
+    /// [A] 和了判定 (14枚の手牌を仮想的に作って判定)
+    /// </summary>
+    /*private IEnumerator CheckWinConditionA(int N, int M)
     {
         // 1. 仮想の手牌(14枚)を作成
         List<GameObject> tempHand = new List<GameObject>(playerHand);
@@ -434,7 +465,7 @@ public class MahjongDisplayManager : MonoBehaviour
             SetUIActive(true, true, true); // ボタン再表示
         }
         yield return null;
-    }
+    }*/
 
     /// <summary>
     /// [A] 牌の入れ替えと破棄を実行する
@@ -615,7 +646,7 @@ public class MahjongDisplayManager : MonoBehaviour
             handBase[13] = winningTile; // 14枚目としてセット
 
             // MahjongLogic.csのCheckWinは14枚の完成形を渡す必要がある
-            if (mahjongScoring.CheckWin(handBase, winningTile, 1, 1).Count > 0)
+            if (mahjongScoring.CheckWin(handBase, winningTile, 1, 1,false).Count > 0)
             {
                 canWin = true;
                 break;
@@ -655,11 +686,45 @@ public class MahjongDisplayManager : MonoBehaviour
             StartCoroutine(ShowTemporaryMessage("当たり牌を1枚選んでください"));
         }
     }
-
-    /// <summary>
+/// <summary>
     /// [B] 和了判定 (13枚の手牌 + 選択した1枚)
     /// </summary>
     private IEnumerator CheckWinConditionB()
+    {
+        // 1. 手牌(13枚) + 選択牌(1枚)で14枚の手牌を作成
+        CopyHandToTmp(playerHand);
+        GameObject winningTileObj = selectedTiles[0];
+        int winningTile = GetTileCode(winningTileObj);
+        tmp_wk[13] = winningTile; // 14枚目としてセット
+        
+        // ★ 修正: isRon: true を渡す
+        List<string> yakuNames = mahjongScoring.CheckWin(tmp_wk, winningTile, 1, 1, true); // true = ロン和了
+
+        if (yakuNames.Count > 0)
+        {
+            // 和了！
+            // 当たり牌を手牌に加え、他を破棄
+            playerHand.Add(winningTileObj);
+            candidateTiles.Remove(winningTileObj);
+            foreach (var tile in candidateTiles) { Destroy(tile); }
+            candidateTiles.Clear();
+            selectedTiles.Clear();
+
+            SortAndRedisplayHand();
+            
+            // ★ 修正: yakuNames を ShowWinResult に渡す
+            StartCoroutine(ShowWinResult(yakuNames));
+        }
+        else
+        {
+            // ... (上がりなしの処理) ...
+        }
+        yield return null;
+    }
+    /// <summary>
+    /// [B] 和了判定 (13枚の手牌 + 選択した1枚)
+    /// </summary>
+    /*private IEnumerator CheckWinConditionB()
     {
         // 1. 手牌(13枚) + 選択牌(1枚)で14枚の手牌を作成
         CopyHandToTmp(playerHand);
@@ -692,7 +757,7 @@ public class MahjongDisplayManager : MonoBehaviour
             StartCoroutine(DrawCandidateTilesB()); // 3枚表示に戻す (実際は破棄せず再表示)
         }
         yield return null;
-    }
+    }*/
 
     // --------------------------------------------------------------------------------
     // 6. 結果表示・リセット
@@ -701,7 +766,7 @@ public class MahjongDisplayManager : MonoBehaviour
     /// <summary>
     /// 和了結果を表示
     /// </summary>
-    private IEnumerator ShowWinResult(List<string> yakuNames)
+ /*   private IEnumerator ShowWinResult(List<string> yakuNames)
     {
         currentState = GameState.Result;
         SetUIActive(false, false, false);
@@ -716,8 +781,35 @@ public class MahjongDisplayManager : MonoBehaviour
         resultText.gameObject.SetActive(true);
         currentState = GameState.NextTurn;
         yield return null;
-    }
+    }*/
+/// <summary>
+    /// 和了結果を表示
+    /// </summary>
+    private IEnumerator ShowWinResult(List<string> yakuNames)
+    {
+        currentState = GameState.Result;
+        SetUIActive(false, false, false);
+        if (nakiModeToggle != null) nakiModeToggle.gameObject.SetActive(false); 
+        
+        foreach (var tile in candidateTiles) { Destroy(tile); }
+        candidateTiles.Clear();
+        selectedTiles.Clear();
 
+        // ★ 修正: 役名リスト + 点数サマリ を表示
+        
+        // 1. 点数サマリを取得 (Logic側で親/子を自動判定)
+        string scoreSummary = mahjongScoring.GetScoreSummary(); 
+
+        // 2. 役名を連結
+        string yakuList = string.Join("\n", yakuNames);
+        
+        // 3. 結合して表示 (C++ の表示形式)
+        resultText.text = $"{yakuList}\n\n{scoreSummary}";
+        resultText.gameObject.SetActive(true);
+        
+        currentState = GameState.NextTurn;
+        yield return null;
+    }
 
     private void ResetAndRestart()
     {
